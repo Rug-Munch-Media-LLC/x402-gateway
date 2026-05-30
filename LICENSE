@@ -1,0 +1,50 @@
+Rug Munch Intelligence — Source Available License 1.0
+Copyright (c) 2024-2026 Rug Munch Media LLC. All rights reserved.
+
+──────────────────────────────────────────────────────────────────────
+YOU MAY:                                                              
+  • View, fork, and study this code for educational purposes          
+  • Submit pull requests (contributions become our property)          
+  • Use the public API at rugmunch.io within free-tier limits         
+  • Reference this code in security audits of our platform            
+──────────────────────────────────────────────────────────────────────
+YOU MAY NOT:                                                          
+  • Use this code or any derivative for commercial purposes           
+  • Deploy, host, or operate this software as a service               
+  • Sell, license, or distribute this software or derivatives         
+  • Use this code to build competing crypto security products         
+  • Use this code for scam detection, rug pull analysis, or           
+    blockchain forensics outside of rugmunch.io's official API        
+  • Extract, reverse engineer, or replicate our data sourcing         
+    methods, scam detection heuristics, or intelligence pipelines     
+  • Redistribute this code in any form without written permission     
+  • Use this code to train AI/ML models without a data license        
+  • Scrape, harvest, or bulk-extract from rugmunch.io endpoints       
+──────────────────────────────────────────────────────────────────────
+COMMERCIAL USE:                                                       
+  To use this software commercially, contact:                         
+  admin@rugmunch.io                                                   
+                                                                      
+  We offer enterprise licenses, white-label deployments, and          
+  custom integrations for qualified partners.                         
+──────────────────────────────────────────────────────────────────────
+DATA & METHODOLOGY:                                                   
+  All scam detection heuristics, intelligence pipelines, source       
+  aggregation methods, wallet labeling techniques, and backend        
+  infrastructure are RUG MUNCH MEDIA LLC PROPRIETARY ASSETS.          
+  These are NOT covered by any open-source grant. Unauthorized        
+  extraction, replication, or disclosure of these methods             
+  constitutes intellectual property theft.                            
+──────────────────────────────────────────────────────────────────────
+NO WARRANTY: THIS SOFTWARE IS PROVIDED "AS IS" WITHOUT WARRANTY OF    
+ANY KIND. RUG MUNCH MEDIA LLC DISCLAIMS ALL LIABILITY FOR DAMAGES     
+OR LOSSES INCURRED THROUGH USE OF THIS SOFTWARE.                      
+
+THE FREE TIER at rugmunch.io IS A SERVICE, NOT A RIGHT. WE RESERVE    
+THE RIGHT TO LIMIT, MODIFY, OR DISCONTINUE ACCESS AT ANY TIME.        
+──────────────────────────────────────────────────────────────────────
+OFFICIAL PLATFORM:                                                    
+  https://rugmunch.io                                                 
+  @CryptoRugMunch (Telegram, X, Mastodon, Bluesky)                    
+  admin@rugmunch.io                                                   
+──────────────────────────────────────────────────────────────────────
