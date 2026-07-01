@@ -1,0 +1,83 @@
+name: Feature Request
+description: Propose a new feature or improvement
+title: "[Feature]: "
+labels: ["enhancement", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this for new features or improvements. For bugs, use the Bug Report template.
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      description: Which product / surface does this affect?
+      options:
+        - RMI (scanner / dashboard)
+        - Pry (crawler)
+        - WalletPress
+        - RugCharts
+        - RugMaps
+        - x402 Gateway
+        - Infra / CI / tooling
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem / motivation
+      description: What user pain or gap does this address? Why is it worth building?
+      placeholder: |
+        As a <user type>, I want to <action>, so that <outcome>.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: How would you build it? API, UI, data model.
+      placeholder: |
+        - Add new endpoint POST /api/v1/...
+        - Add new column `risk_score` to `tokens` table
+        - Add new React component `RiskBadge`
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Other ways to solve this. Why this approach?
+
+  - type: textarea
+    id: scope
+    attributes:
+      label: Acceptance criteria
+      description: How do we know it's done? Checklist.
+      placeholder: |
+        - [ ] Endpoint returns <expected shape>
+        - [ ] Tests cover happy + edge cases
+        - [ ] Docs updated
+        - [ ] No new lint errors
+
+  - type: checkboxes
+    id: effort
+    attributes:
+      label: Effort estimate
+      options:
+        - Small (< 1 day)
+        - Medium (1-3 days)
+        - Large (1-2 weeks)
+        - XL (2+ weeks, breaking change)
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Pre-submit checks
+      options:
+        - label: I searched existing issues and didn't find a duplicate
+          required: true
+        - label: I'm willing to submit a PR
+          required: false

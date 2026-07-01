@@ -1,0 +1,86 @@
+name: Bug Report
+description: Report a defect or unexpected behavior
+title: "[Bug]: "
+labels: ["bug", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting a bug. Please fill in the sections below.
+
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: Tag, branch, or commit SHA where the bug reproduces
+      placeholder: "v1.2.3 or main@abc1234"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: severity
+    attributes:
+      label: Severity
+      description: How bad is the impact?
+      options:
+        - Critical (data loss, security, total outage)
+        - High (major feature broken, no workaround)
+        - Medium (feature broken, workaround exists)
+        - Low (minor, cosmetic)
+    validations:
+      required: true
+
+  - type: textarea
+    id: summary
+    attributes:
+      label: What happened?
+      description: Clear, factual description of the bug
+      placeholder: |
+        Expected: ...
+        Actual: ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: Numbered steps. Include URLs, commands, inputs.
+      placeholder: |
+        1. Go to /scanner/scan
+        2. Enter address 0x...
+        3. Click "Analyze"
+        4. See "undefined" instead of risk score
+      render: shell
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs / errors / stack trace
+      description: Paste relevant output. Use a code block.
+      render: shell
+      placeholder: |
+        ```
+        2026-07-02T10:00:00 ERROR ...
+        ```
+
+  - type: input
+    id: env
+    attributes:
+      label: Environment
+      description: OS, browser, runtime version, etc.
+      placeholder: "macOS 14.5, Chrome 125, Node 22.3"
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Pre-submit checks
+      options:
+        - label: I searched existing issues and didn't find a duplicate
+          required: true
+        - label: I can reproduce this on `main` HEAD
+          required: false
+        - label: I'm willing to submit a PR
+          required: false

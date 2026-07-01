@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Q&A
+    url: https://git.rugmunch.io/RugMunchMedia/x402-gateway/discussions/new?category=q-a
+    about: Use this for questions and troubleshooting
+  - name: Feature Requests
+    url: https://git.rugmunch.io/RugMunchMedia/x402-gateway/discussions/new?category=feature-requests
+    about: Suggest a new feature or improvement (preview / brainstorm)
+  - name: Announcements
+    url: https://git.rugmunch.io/RugMunchMedia/x402-gateway/discussions/new?category=announcements
+    about: Stay up to date on releases and changes
