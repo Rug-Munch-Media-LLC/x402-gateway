@@ -1,0 +1,79 @@
+# .gitattributes — Rug Munch Media fleet standard
+# See https://git.rugmunch.io/RugMunchMedia/standards for source of truth.
+
+# ── Line endings ───────────────────────────────────────────────
+*               text=auto eol=lf
+
+# Shell scripts must use LF even on Windows checkouts
+*.sh            text eol=lf
+*.bash          text eol=lf
+
+# Windows-native scripts keep CRLF
+*.bat           text eol=crlf
+*.cmd           text eol=crlf
+*.ps1           text eol=crlf
+
+# ── Binary defaults ────────────────────────────────────────────
+*.png           binary
+*.jpg           binary
+*.jpeg          binary
+*.gif           binary
+*.ico           binary
+*.webp          binary
+*.pdf           binary
+*.zip           binary
+*.gz            binary
+*.tgz           binary
+*.tar           binary
+*.bz2           binary
+*.xz            binary
+*.7z            binary
+*.rar           binary
+*.mp4           binary
+*.mp3           binary
+*.wav           binary
+*.mov           binary
+*.avi           binary
+*.woff          binary
+*.woff2         binary
+*.ttf           binary
+*.eot           binary
+*.otf           binary
+*.so            binary
+*.dll           binary
+*.dylib         binary
+*.pyc           binary
+*.pyo           binary
+*.pyd           binary
+*.o             binary
+*.a             binary
+*.lib           binary
+
+# ── Linguist overrides ─────────────────────────────────────────
+# Mark vendor / vendored / generated so they don't pollute stats
+vendor/         linguist-vendored
+node_modules/   linguist-vendored
+__pycache__/    linguist-vendored
+*.min.js        linguist-vendored
+*.min.css       linguist-vendored
+dist/           linguist-vendored
+build/          linguist-vendored
+coverage/       linguist-vendored
+pnpm-lock.yaml  linguist-generated
+package-lock.json linguist-generated
+yarn.lock       linguist-generated
+
+# Markdown documentation
+*.md            linguist-documentation
+docs/           linguist-documentation
+
+# Makefile
+Makefile        linguist-language=Makefile
+*.mk            linguist-language=Makefile
+
+# ── Diff & merge ───────────────────────────────────────────────
+*.json          diff=json
+*.lock          -diff
+package-lock.json -diff
+pnpm-lock.yaml  -diff
+yarn.lock       -diff
