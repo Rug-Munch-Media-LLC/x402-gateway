@@ -1,0 +1,100 @@
+# ── Pre-commit config (canonical) ───────────────────────────────
+# Source of truth: standards/templates/pre-commit-config.template
+# Install: pre-commit install
+#
+# Pre-commit is one of three enforcement layers (per standards/GIT-ARCHITECTURE.md):
+# 1. pre-commit hooks   (local, < 10s, blocks bad commits)
+# 2. pre-push hooks     (local, deeper checks)
+# 3. CI pipeline        (the final gate)
+
+repos:
+  # ── Python linting + formatting (ruff) ───────────────────────
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.13.0
+    hooks:
+      - id: ruff
+        args: [--fix]
+        types_or: [python, pyi]
+      - id: ruff-format
+        types_or: [python, pyi]
+
+  # ── Python type checking (mypy) ──────────────────────────────
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v1.18.2
+    hooks:
+      - id: mypy
+        additional_dependencies: [pydantic, types-requests]
+        # Override in your repo's .pre-commit-config.yaml to match your project layout
+        args: ['--config-file=pyproject.toml', '--ignore-missing-imports']
+
+  # ── Secret scanning (gitleaks) ───────────────────────────────
+  # CRITICAL: NEVER use --no-verify to skip gitleaks. See standards/GIT-ARCHITECTURE.md §14
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.18.4
+    hooks:
+      - id: gitleaks
+
+  # ── Python security audit (bandit) ───────────────────────────
+  - repo: https://github.com/PyCQA/bandit
+    rev: '1.7.10'
+    hooks:
+      - id: bandit
+        args: ['-r', '.']
+        # Bypass for tests if needed:
+        exclude: ^tests/
+
+  # ── General file-hygiene checks ──────────────────────────────
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-json
+      - id: check-toml
+      - id: check-merge-conflict
+      - id: detect-private-key
+      - id: check-added-large-files
+        args: ['--maxkb=500']
+      - id: check-case-conflict
+      - id: mixed-line-ending
+        args: ['--fix=lf']
+      - id: no-commit-to-branch
+        args: ['--branch=main']
+        # Default to allowing this; remove "# WARN" comment to enable blocking main commits
+      - id: forbid-submodules
+      - id: forbid-binary-files
+        # 1MB binary cap on what's checked in. LFS handled by .gitattributes
+
+  # ── Local file-size guard (500 lines / 50 KB) ─────────────────
+  - repo: local
+    hooks:
+      - id: file-size-guard
+        name: file-size-guard (500 lines / 50 KB)
+        entry: python3 scripts/file-size-guard.py
+        language: system
+        files: '\.(py|ts|tsx|js|jsx|md|json|yaml|yml|toml)$'
+        pass_filenames: true
+
+# ── global settings ──────────────────────────────────────────────
+default_language_version:
+  python: python3.11
+  node: system
+
+# Run on every push too (defaults is pre-commit only)
+default_install_hook_types: [pre-commit, pre-push, commit-msg]
+
+fail_fast: false
+min_version: '4.0.0'
+
+# Skip files that aren't worth checking
+exclude: |
+  (?x)^(
+    .*\.min\.(js|css)|
+    package-lock\.json|
+    yarn\.lock|
+    pnpm-lock\.yaml|
+    bun\.lockb|
+    .*\.snap|
+    docs/.*\.md
+  )$
