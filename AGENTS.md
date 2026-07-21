@@ -1,3 +1,9 @@
+# 🗄️ x402-gateway — ARCHIVED
+
+> **This repository is archived.** Core code (`app/`) is a byte-identical clone of
+> [`rmi-mcp-x402`](https://codeberg.org/cryptorugmunch/rmi-mcp-x402) — the canonical successor.
+> Do NOT make changes here. See [ARCHIVED.md](./ARCHIVED.md) for details.
+
 [//]: # (SPDX-License-Identifier: MIT)
 [//]: # (Copyright (c) 2026 Rug Munch Media LLC)
 # AGENTS.md — x402-gateway
