@@ -13,19 +13,15 @@ Pricing (per v4.0):
   Free:   5 calls/day
   Pro:    $0.01/call (1000 calls/day)
   Ent:    $0.001/call (unlimited)
-
-For v1, we use a simplified flow:
-  - Track calls per agent in Redis (sliding window)
-  - Receipts logged to x402_receipts table
-  - Payment verification stubbed (returns True for now)
-  - The 402 challenge includes a payment_url the agent hits
 """
+
 from __future__ import annotations
 
 import base64
 import hashlib
 import json
 import logging
+import os
 from datetime import UTC, datetime
 from typing import Any
 from uuid import uuid4
@@ -35,24 +31,99 @@ from fastapi import HTTPException, Request
 log = logging.getLogger(__name__)
 
 
+# ── On-Chain Verification Configuration ──────────────────────────
+# These are read from environment variables with sensible defaults.
+# RPC endpoints: for Base mainnet the public endpoint is fine for reads;
+# for production set X402_RPC_URL_BASE to a private RPC.
+
+X402_RPC_URL_BASE = os.environ.get(
+    "X402_RPC_URL_BASE",
+    "https://mainnet.base.org",
+)
+
+# Pay-to address — the wallet that should receive payment.
+# Must match the pay_to field in invoices.
+X402_PAY_TO_ADDRESS = os.environ.get(
+    "X402_EVM_PAY_TO",
+    os.environ.get("X402_PAY_TO_ADDRESS", ""),
+)
+
+# Minimum confirmations required before accepting a payment.
+# Base block time is ~2s; 12 blocks ≈ 24 seconds.
+X402_REQUIRED_CONFIRMATIONS = int(os.environ.get("X402_REQUIRED_CONFIRMATIONS", "12"))
+
+# ETH/USD price assumption for value comparison.
+# Kept in sync with create_invoice().
+X402_ETH_USD_RATE = float(os.environ.get("X402_ETH_USD_RATE", "3000"))
+
+
 # ── Pricing per v4.0 §T34 ───────────────────────────────────────────
 PRICING: dict[str, dict[str, Any]] = {
     # free_tier: bool, pro_cents: int (USD cents), ent_cents: int
-    "get_token_risk":            {"free_tier": True,  "pro_cents": 1,    "ent_cents": 1,    "description": "Real-time token risk score"},
-    "get_wallet_analysis":       {"free_tier": True,  "pro_cents": 1,    "ent_cents": 1,    "description": "Wallet activity + reputation"},
-    "get_deployer_reputation":   {"free_tier": False, "pro_cents": 2,    "ent_cents": 1,    "description": "Deployer reputation score"},
-    "get_news_sentiment":        {"free_tier": True,  "pro_cents": 1,    "ent_cents": 1,    "description": "Latest news + sentiment"},
-    "generate_report":           {"free_tier": False, "pro_cents": 500,  "ent_cents": 400,  "description": "Full AI research report"},
-    "query_catalog":             {"free_tier": False, "pro_cents": 5,    "ent_cents": 3,    "description": "Natural language catalog query"},
-    "find_similar_tokens":       {"free_tier": False, "pro_cents": 3,    "ent_cents": 2,    "description": "Vector-similar tokens"},
-    "resolve_entity":            {"free_tier": False, "pro_cents": 10,   "ent_cents": 5,    "description": "Cross-chain entity resolution"},
-    "search_rag":                {"free_tier": True,  "pro_cents": 1,    "ent_cents": 1,    "description": "RAG semantic search"},
-    "bulk_ingest":               {"free_tier": False, "pro_cents": 10,   "ent_cents": 5,    "description": "Bulk RAG ingestion"},
+    "get_token_risk": {
+        "free_tier": True,
+        "pro_cents": 1,
+        "ent_cents": 1,
+        "description": "Real-time token risk score",
+    },
+    "get_wallet_analysis": {
+        "free_tier": True,
+        "pro_cents": 1,
+        "ent_cents": 1,
+        "description": "Wallet activity + reputation",
+    },
+    "get_deployer_reputation": {
+        "free_tier": False,
+        "pro_cents": 2,
+        "ent_cents": 1,
+        "description": "Deployer reputation score",
+    },
+    "get_news_sentiment": {
+        "free_tier": True,
+        "pro_cents": 1,
+        "ent_cents": 1,
+        "description": "Latest news + sentiment",
+    },
+    "generate_report": {
+        "free_tier": False,
+        "pro_cents": 500,
+        "ent_cents": 400,
+        "description": "Full AI research report",
+    },
+    "query_catalog": {
+        "free_tier": False,
+        "pro_cents": 5,
+        "ent_cents": 3,
+        "description": "Natural language catalog query",
+    },
+    "find_similar_tokens": {
+        "free_tier": False,
+        "pro_cents": 3,
+        "ent_cents": 2,
+        "description": "Vector-similar tokens",
+    },
+    "resolve_entity": {
+        "free_tier": False,
+        "pro_cents": 10,
+        "ent_cents": 5,
+        "description": "Cross-chain entity resolution",
+    },
+    "search_rag": {
+        "free_tier": True,
+        "pro_cents": 1,
+        "ent_cents": 1,
+        "description": "RAG semantic search",
+    },
+    "bulk_ingest": {
+        "free_tier": False,
+        "pro_cents": 10,
+        "ent_cents": 5,
+        "description": "Bulk RAG ingestion",
+    },
 }
 
 # Free tier daily limit
 FREE_DAILY_LIMIT = 5
-
 
 
 # ── Nonce burn (replay protection) ──────────────────────────────
@@ -115,11 +186,14 @@ try:
 except Exception:
     # Prometheus not available — use no-op counter stubs
     class _Stub:
-        def labels(self, **kw): return self
-        def inc(self, n: float = 1.0): pass
+        def labels(self, **kw):
+            return self
+
+        def inc(self, n: float = 1.0):
+            pass
+
     _X402_REPLAY_COUNTER = _Stub()
     _X402_REVENUE_COUNTER = _Stub()
-
 
 
 def get_tool_price_usd(tool: str) -> float:
@@ -203,7 +277,7 @@ def create_invoice(tool: str, agent_id: str) -> dict:
         "tool": tool,
         "agent_id": agent_id,
         "amount_usd": amount_usd,
-        "amount_wei": int(amount_usd * 1e18 / 3000),  # assume ETH = $3000
+        "amount_wei": int(amount_usd * 1e18 / X402_ETH_USD_RATE),
         "pay_to": "0xRMI_PLATFORM_WALLET",  # placeholder
         "chain": "base",  # L2 for low fees
         "created_at": datetime.now(UTC).isoformat(),
@@ -217,7 +291,9 @@ def create_invoice(tool: str, agent_id: str) -> dict:
     return invoice
 
 
-def verify_payment_header(x_payment: str, expected_amount_usd: float) -> tuple[str, str] | None:
+def verify_payment_header(
+    x_payment: str, expected_amount_usd: float
+) -> tuple[str, str] | None:
     """Decode the X-Payment header. Returns (tx_hash, signature) or None.
 
     Format: base64({"tx_hash": "...", "signature": "..."})
@@ -233,17 +309,139 @@ def verify_payment_header(x_payment: str, expected_amount_usd: float) -> tuple[s
 
 
 async def verify_payment_on_chain(tx_hash: str, expected_amount_usd: float) -> bool:
-    """Verify an on-chain payment. v1 stub — returns True for valid-format hashes.
+    """Verify an on-chain payment by fetching and inspecting the transaction receipt.
 
-    Production: web3.py to query the chain, check recipient + amount.
+    Checks performed:
+      1. Transaction exists and was successful (status == 1)
+      2. Recipient address matches the expected pay-to wallet
+      3. Transferred value is >= expected amount (converted from USD to wei)
+      4. Transaction has >= X402_REQUIRED_CONFIRMATIONS
+
+    Fail-closed: returns False if RPC is unreachable (with a warning log).
     """
     if not tx_hash or not tx_hash.startswith("0x") or len(tx_hash) != 66:
+        log.warning(f"x402_verify_bad_hash: {tx_hash!r}")
         return False
-    # Real impl: check tx exists, recipient matches, amount >= expected
-    return True
+
+    # Recipient must be configured — reject if missing.
+    expected_recipient = X402_PAY_TO_ADDRESS
+    if not expected_recipient:
+        log.error(
+            "x402_verify_no_recipient: X402_EVM_PAY_TO (or X402_PAY_TO_ADDRESS) is not set"
+        )
+        return False
+
+    # Convert USD to wei (must match the invoice calculation).
+    expected_amount_wei = int(expected_amount_usd * 1e18 / X402_ETH_USD_RATE)
+
+    try:
+        # Use async Web3 with a custom async provider for non-blocking I/O.
+        # web3.py v7 supports AsyncWeb3 natively.
+        from web3 import AsyncWeb3
+
+        w3 = AsyncWeb3(AsyncWeb3.AsyncHTTPProvider(X402_RPC_URL_BASE))
+
+        # ── 1. Fetch the transaction receipt ────────────────────────
+        try:
+            # First check if the tx exists at all by getting the transaction.
+            tx = await w3.eth.get_transaction(tx_hash)
+        except Exception as e:
+            log.warning(f"x402_verify_tx_not_found: hash={tx_hash[:18]}... error={e}")
+            return False
+
+        if tx is None:
+            log.warning(f"x402_verify_tx_none: hash={tx_hash[:18]}...")
+            return False
+
+        # ── 2. Verify recipient address ─────────────────────────────
+        tx_to = tx.get("to")
+        if tx_to is None:
+            log.warning(
+                "x402_verify_contract_create",
+                hash=tx_hash[:18],
+            )
+            return False
+
+        if tx_to.lower() != expected_recipient.lower():
+            log.warning(
+                f"x402_verify_wrong_recipient: hash={tx_hash[:18]}... "
+                f"tx_to={tx_to} expected={expected_recipient}",
+            )
+            return False
+
+        # ── 3. Verify transaction value is sufficient ───────────────
+        tx_value = tx.get("value", 0)
+        if tx_value < expected_amount_wei:
+            log.warning(
+                f"x402_verify_underpaid: hash={tx_hash[:18]}... "
+                f"value_wei={tx_value} expected_wei={expected_amount_wei}",
+            )
+            return False
+
+        # ── 4. Fetch receipt for status + block number ──────────────
+        try:
+            receipt = await w3.eth.get_transaction_receipt(tx_hash)
+        except Exception as e:
+            log.warning(f"x402_verify_receipt_fail: hash={tx_hash[:18]}... error={e}")
+            return False
+
+        if receipt is None:
+            log.warning(f"x402_verify_receipt_none: hash={tx_hash[:18]}...")
+            return False
+
+        # Transaction status: 1 = success, 0 = failure, None = pending
+        status = receipt.get("status")
+        if status != 1 and status != "0x1":
+            log.warning(
+                f"x402_verify_tx_failed: hash={tx_hash[:18]}... status={status}",
+            )
+            return False
+
+        # ── 5. Verify confirmations ─────────────────────────────────
+        tx_block = receipt.get("blockNumber")
+        if tx_block is None:
+            log.warning(f"x402_verify_no_block: hash={tx_hash[:18]}...")
+            return False
+
+        try:
+            latest_block = await w3.eth.block_number
+        except Exception as e:
+            log.warning(
+                f"x402_verify_block_num_fail: hash={tx_hash[:18]}... error={e}",
+            )
+            # Conservative: if we can't get the latest block, accept a
+            # confirmed receipt but log the issue.
+            latest_block = tx_block
+
+        confirmations = latest_block - tx_block
+        if confirmations < X402_REQUIRED_CONFIRMATIONS:
+            log.warning(
+                f"x402_verify_underconfirmed: hash={tx_hash[:18]}... "
+                f"confirmations={confirmations} required={X402_REQUIRED_CONFIRMATIONS}",
+            )
+            return False
+
+        # ── All checks passed ───────────────────────────────────────
+        log.info(
+            f"x402_verify_ok: hash={tx_hash[:18]}... "
+            f"value_wei={tx_value} recipient={expected_recipient[:10]}... "
+            f"confirmations={confirmations}",
+        )
+        return True
+
+    except ImportError as e:
+        log.error(f"x402_verify_no_web3: {e}")
+        # Fail closed — if web3 isn't installed, reject.
+        return False
+    except Exception as e:
+        log.error(f"x402_verify_error: hash={tx_hash[:18]}... error={e}")
+        # Fail closed — RPC failure should not grant free access.
+        return False
 
 
-async def record_receipt(catalog, tx_hash: str, tool: str, agent_id: str, amount_usd: float) -> bool:
+async def record_receipt(
+    catalog, tx_hash: str, tool: str, agent_id: str, amount_usd: float
+) -> bool:
     """Log the payment receipt to x402_receipts table."""
     if not catalog._health.postgres:
         return False
@@ -253,7 +451,12 @@ async def record_receipt(catalog, tx_hash: str, tool: str, agent_id: str, amount
                 """INSERT INTO x402_receipts (tx_hash, agent_id, tool, amount_usd, chain, paid_at, tier)
                    VALUES ($1, $2, $3, $4, $5, NOW(), $6)
                    ON CONFLICT (tx_hash) DO NOTHING""",
-                tx_hash, agent_id, tool, amount_usd, "base", "pro",
+                tx_hash,
+                agent_id,
+                tool,
+                amount_usd,
+                "base",
+                "pro",
             )
         return True
     except Exception as e:
@@ -281,7 +484,12 @@ async def require_payment(
 
     # Free tool — no payment required
     if get_tool_price_usd(tool) == 0:
-        return {"agent_id": agent_id, "tool": tool, "tier": "free", "paid_via_x402": None}
+        return {
+            "agent_id": agent_id,
+            "tool": tool,
+            "tier": "free",
+            "paid_via_x402": None,
+        }
 
     # Paid tool — check X-Payment header
     if request is None:
@@ -326,13 +534,13 @@ async def require_payment(
                 "message": "This payment receipt has already been used. Each tx_hash can only be used once.",
             },
         )
-    _X402_REVENUE_COUNTER.labels(tool=tool, tier="pro").inc(int(get_tool_price_usd(tool) * 100))
+    _X402_REVENUE_COUNTER.labels(tool=tool, tier="pro").inc(
+        int(get_tool_price_usd(tool) * 100)
+    )
 
     # Record the receipt
     if catalog:
-        await record_receipt(
-            catalog, tx_hash, tool, agent_id, get_tool_price_usd(tool)
-        )
+        await record_receipt(catalog, tx_hash, tool, agent_id, get_tool_price_usd(tool))
 
     return {
         "agent_id": agent_id,

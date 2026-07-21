@@ -34,3 +34,9 @@ tmp/
 # ── IDE ────────────────────────────────────────────────────────
 .vscode/
 .idea/
+# Heredoc accident leftovers (created by bash <<EOF bypass)
+u00261
+u00262
+u003c
+u003e
+
