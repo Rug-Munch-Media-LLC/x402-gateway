@@ -1,0 +1,11 @@
+pre-commit:
+  commands:
+    gitleaks:
+      run: gitleaks detect --source . --no-git -v
+    envsitter:
+      run: envsitter scan .
+
+pre-push:
+  commands:
+    gitleaks:
+      run: gitleaks detect --source . --no-git -v
