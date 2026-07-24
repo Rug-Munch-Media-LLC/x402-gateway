@@ -1,11 +1,23 @@
-pre-commit:
-  commands:
-    gitleaks:
-      run: gitleaks detect --source . --no-git -v
-    envsitter:
-      run: envsitter scan .
+# Lefthook configuration — Rug Munch Media LLC
+# Standardized pre-commit hooks
+# https://lefthook.dev/configuration/
 
-pre-push:
+pre-commit:
+  parallel: true
   commands:
     gitleaks:
-      run: gitleaks detect --source . --no-git -v
+      run: gitleaks detect --no-git --source .
+    envsitter:
+      run: envsitter validate .env
+      skip: "[ -f .env ] || echo 'no .env'"
+    ruff:
+      run: ruff check --select=E,F,W
+      glob: "*.py"
+    biome:
+      run: biome check --write .
+      glob: "*.{ts,tsx,js,jsx,json}"
+
+commit-msg:
+  commands:
+    commitlint:
+      run: commitlint --edit "$1"
