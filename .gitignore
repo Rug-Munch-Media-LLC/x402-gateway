@@ -1,6 +1,5 @@
 # Generic / orphaned-repo .gitignore — Rug Munch Media fleet standard
 # See https://git.rugmunch.io/RugMunchMedia/standards for source of truth.
-
 # ── Secrets (zero tolerance) ───────────────────────────────────
 .env
 .env.*
@@ -13,7 +12,6 @@
 credentials.json
 service-account.json
 .secrets/
-
 # ── Common artifacts ───────────────────────────────────────────
 node_modules/
 dist/
@@ -30,7 +28,6 @@ tmp/
 *.swp
 *.swo
 *~
-
 # ── IDE ────────────────────────────────────────────────────────
 .vscode/
 .idea/
@@ -39,4 +36,14 @@ u00261
 u00262
 u003c
 u003e
+# Missing common patterns (added by fleet standardization)
+.turbo/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.next/
+.nuxt/
+coverage/
+htmlcov/
+Thumbs.db
 
