@@ -1,5 +1,17 @@
 # 🗄️ x402-gateway — Archived
 
+> # 🗑️ SCHEDULED FOR DELETION
+>
+> **This repo is a byte-identical clone of [`rmi-mcp-x402`](https://codeberg.org/cryptorugmunch/rmi-mcp-x402).**
+> It will be **deleted from all remotes**. History is preserved in `rmi-mcp-x402`.
+>
+> **Remotes this repo exists on (verified 2026-09-05 via `git ls-remote`):**
+> - **gitlab** — `git@gitlab.com:cryptorugmuncher/x402-gateway.git` (exists — main, phase1/archive, v1.0.0)
+> - **forgejo** — `https://git.rugmunch.io/RugMunchMedia/x402-gateway.git` (does NOT exist — "Repository not found")
+> - **codeberg** — `git@codeberg.org:cryptorugmunch/x402-gateway.git` (does NOT exist — "Cannot find repository")
+>
+> Deletion applies to the gitlab remote where the repo actually lives. Do not make changes here. All contributions go to `rmi-mcp-x402`.
+
 **Archived:** 2026-07-27  
 **Reason:** Duplicate codebase — QA verified 24/27 router files are byte-identical, 3 files differ only by minor enhancements in the canonical repo.  
 **Successor:** [`rmi-mcp-x402`](https://codeberg.org/cryptorugmunch/rmi-mcp-x402) — the canonical home for x402 gateway code.
