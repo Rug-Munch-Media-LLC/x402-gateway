@@ -18,7 +18,7 @@ Following industry leaders (GitLab CE/EE, Supabase OSS/Platform, Sentry OSS/Host
 
 | Type | Visibility | Examples |
 |------|-----------|---------|
-| Public repos | Open Source (MIT) | rmi-frontend, rmi-backend, pryscraper, walletpress, rmi-rag, chain-indexer, rugcharts, rugmaps |
+| Public repos | Open Source (MIT) | rmi-frontend, rmi-backend, pryscraper, walletpress, rugbrain, chain-indexer, rugcharts, rugmaps |
 | Private repos | Proprietary | fleet-infra (infra configs), rmi-core (admin backend) |
 
 ## Protections
