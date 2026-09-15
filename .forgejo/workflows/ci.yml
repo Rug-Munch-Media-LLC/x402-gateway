@@ -41,3 +41,15 @@ jobs:
         run: |
           curl -sSfL https://github.com/gitleaks/gitleaks/releases/download/v8.24.0/gitleaks_8.24.0_linux_x64.tar.gz | tar -xz -C /usr/local/bin gitleaks
           gitleaks detect --source . --no-banner
+
+  structure-gate:
+    # Anti-god-module + anti-monkeypatch ratchet (baseline:
+    # scripts/structure-baseline.json). Shrink freely; growth or NEW
+    # offenders fail the build. Regenerate deliberately: --update-baseline.
+    runs-on: docker-x64
+    container:
+      image: nikolaik/python-nodejs:python3.11-nodejs22
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Structure gate
+        run: python3 scripts/check-code-structure.py

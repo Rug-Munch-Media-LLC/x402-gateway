@@ -1,0 +1,10 @@
+{
+  "comment": "Grandfathered offenders. Files may SHRINK freely; GROWTH or NEW offenders fail the gate. monkeypatch counts only go down.",
+  "max_file_lines": 1500,
+  "max_func_lines": 150,
+  "files": {
+    "backend/app/routers/x402_databus_tools.py": 1756,
+    "backend/app/routers/x402_enforcement.py": 2556
+  },
+  "monkeypatch": {}
+}
