@@ -161,6 +161,14 @@ def _is_unit_weight(node: ast.expr) -> bool:
     )
 
 
+def _assigned_names(node: ast.AST) -> list[str]:
+    if isinstance(node, ast.Assign):
+        return [t.id for t in node.targets if isinstance(t, ast.Name)]
+    if isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
+        return [node.target.id]
+    return []
+
+
 def test_scoring_routers_import_the_seam_not_a_table() -> None:
     for path in SCORING_ROUTERS:
         tree = _parse(path)
@@ -174,12 +182,7 @@ def test_scoring_routers_import_the_seam_not_a_table() -> None:
             f"{path.name} must resolve the policy from the seam"
         )
         for node in ast.walk(tree):
-            targets = []
-            if isinstance(node, ast.Assign):
-                targets = [t.id for t in node.targets if isinstance(t, ast.Name)]
-            elif isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
-                targets = [node.target.id]
-            for name in targets:
+            for name in _assigned_names(node):
                 assert name.lower() not in TABLE_NAMES, (
                     f"{path.name}: local scoring table {name!r}"
                 )

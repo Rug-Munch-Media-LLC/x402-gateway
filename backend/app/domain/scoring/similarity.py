@@ -15,3 +15,10 @@ def similarity_tier(score: float, cutoffs: Mapping[str, float]) -> str:
         if score > cutoff:
             return name
     return ""
+
+#: Public flag wording per tier. The cut-offs that select them and the points
+#: they subtract are calibration; only the wording is open.
+SIMILARITY_LABELS: Mapping[str, tuple[str, str]] = {
+    "strong": ("high", "Strong scam pattern match"),
+    "possible": ("medium", "Possible scam pattern"),
+}

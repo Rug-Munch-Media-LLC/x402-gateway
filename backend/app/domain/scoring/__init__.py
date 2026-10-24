@@ -23,9 +23,10 @@ from app.domain.scoring.policy import (
     load_policy,
     reset_policy,
 )
-from app.domain.scoring.similarity import similarity_tier
+from app.domain.scoring.similarity import SIMILARITY_LABELS, similarity_tier
 
 __all__ = [
+    "SIMILARITY_LABELS",
     "ENTRY_POINT_GROUP",
     "ENV_VAR",
     "Policy",

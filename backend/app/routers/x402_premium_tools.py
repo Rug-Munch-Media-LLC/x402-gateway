@@ -17,18 +17,11 @@ import aiohttp
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
-from app.domain.scoring import load_policy, similarity_tier
+from app.domain.scoring import SIMILARITY_LABELS, load_policy, similarity_tier
 
 logger = logging.getLogger("x402.premium")
 
 router = APIRouter()
-
-#: Public flag wording. The similarity cut-offs that select them, and the
-#: points they subtract, are calibration and live in the scoring policy.
-_SIMILARITY_LABELS = {
-    "strong": ("high", "Strong scam pattern match"),
-    "possible": ("medium", "Possible scam pattern"),
-}
 
 # ═══════════════════════════════════════════════════════════
 # Request Models
@@ -141,7 +134,7 @@ async def reputation_score(req: AddressRequest):
                         tier = similarity_tier(sim_score, policy.similarity_cutoffs)
                         if tier:
                             score -= policy.similarity_penalties.get(tier, 0)
-                            severity, label = _SIMILARITY_LABELS[tier]
+                            severity, label = SIMILARITY_LABELS[tier]
                             flags.append(
                                 {
                                     "severity": severity,
