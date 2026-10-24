@@ -18,6 +18,8 @@ import aiohttp
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
+from app.domain.scoring import band_for, load_policy, weighted_composite
+
 logger = logging.getLogger("x402.alpha")
 
 router = APIRouter()
@@ -80,6 +82,17 @@ class WashTradeRequest(BaseModel):
     lookback_hours: int = Field(default=24, ge=1, le=72)
 
 
+#: Public verdict labels. The thresholds that select them are policy.
+_COMPOSITE_VERDICTS = {
+    "strong_buy": ("STRONG_BUY", "All signals positive — low risk, healthy market, positive sentiment"),
+    "buy": ("BUY", "Generally favorable — some minor flags, standard caution advised"),
+    "hold": ("HOLD", "Mixed signals — wait for clearer direction or reduce position"),
+    "caution": ("CAUTION", "Multiple risk signals — significant due diligence required"),
+    "high_risk": ("HIGH_RISK", "Dangerous — multiple critical flags, high rug probability"),
+    "avoid": ("AVOID", "EXTREME RISK — confirmed scam indicators, do not interact"),
+}
+
+
 # ═══════════════════════════════════════════════════════════
 # TOOL: RMI Composite Score ($0.25)
 # ═══════════════════════════════════════════════════════════
@@ -90,13 +103,9 @@ async def composite_score(req: TokenRequest):
     """The one number to rule them all. Combines every RMI signal into a 0-100
     composite score for instant buy/sell/avoid decisions.
 
-    Components weighted by predictive power:
-    - Reputation Score (25%): trust signals, labels, scam flags
-    - Rug Probability (25%): honeypot, liquidity, deployer patterns
-    - Market Health (15%): volume/liquidity ratio, age, holder concentration
-    - Narrative Sentiment (15%): social media sentiment + shill detection
-    - MEV Exposure (10%): sandwich/frontrunning risk
-    - DeFi Position (10%): impermanent loss, protocol risk
+    Components are blended by the resolved scoring policy; the calibration is
+    not published. Each component's individual score is returned so callers can
+    judge the inputs themselves.
 
     Returns: composite_score (0-100), verdict (BUY/HOLD/CAUTION/AVOID),
     component breakdown with individual scores.
@@ -257,50 +266,12 @@ async def composite_score(req: TokenRequest):
             }
 
         # ── Compute Composite ──
-        weights = {
-            "reputation": 0.25,
-            "rug_risk": 0.25,
-            "market_health": 0.15,
-            "narrative": 0.15,
-            "mev_exposure": 0.10,
-        }
-        available_weight = sum(weights.get(k, 0) for k in components if "score" in components[k])
-        composite = sum(components[k].get("score", 50) * weights.get(k, 0) for k in components) / max(
-            available_weight, 0.01
-        )
-        composite = round(max(0, min(100, composite)), 1)
+        policy = load_policy()
+        composite = weighted_composite(components, policy.composite_weights)
 
-        # Verdict
-        if composite >= 80:
-            verdict, recommendation = (
-                "STRONG_BUY",
-                "All signals positive — low risk, healthy market, positive sentiment",
-            )
-        elif composite >= 65:
-            verdict, recommendation = (
-                "BUY",
-                "Generally favorable — some minor flags, standard caution advised",
-            )
-        elif composite >= 50:
-            verdict, recommendation = (
-                "HOLD",
-                "Mixed signals — wait for clearer direction or reduce position",
-            )
-        elif composite >= 35:
-            verdict, recommendation = (
-                "CAUTION",
-                "Multiple risk signals — significant due diligence required",
-            )
-        elif composite >= 20:
-            verdict, recommendation = (
-                "HIGH_RISK",
-                "Dangerous — multiple critical flags, high rug probability",
-            )
-        else:
-            verdict, recommendation = (
-                "AVOID",
-                "EXTREME RISK — confirmed scam indicators, do not interact",
-            )
+        # Verdict — labels are the public contract; the score at which each
+        # one applies is calibration and lives in the resolved scoring policy.
+        verdict, recommendation = _COMPOSITE_VERDICTS[band_for(composite, policy.composite_bands, default="avoid")]
 
         result = {
             "tool": "RMI Composite Score",

@@ -17,9 +17,18 @@ import aiohttp
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
+from app.domain.scoring import load_policy, similarity_tier
+
 logger = logging.getLogger("x402.premium")
 
 router = APIRouter()
+
+#: Public flag wording. The similarity cut-offs that select them, and the
+#: points they subtract, are calibration and live in the scoring policy.
+_SIMILARITY_LABELS = {
+    "strong": ("high", "Strong scam pattern match"),
+    "possible": ("medium", "Possible scam pattern"),
+}
 
 # ═══════════════════════════════════════════════════════════
 # Request Models
@@ -71,6 +80,7 @@ async def reputation_score(req: AddressRequest):
         flags = []
         positives = []
         sources = []
+        policy = load_policy()
 
         # ── 1. Wallet Labels (ClickHouse) ──
         labels = await _lookup_labels_async(addr)
@@ -128,20 +138,14 @@ async def reputation_score(req: AddressRequest):
                     matches = p.get("matches", [])
                     for m in matches:
                         sim_score = m.get("score", 0)
-                        if sim_score > 0.8:
-                            score -= 40
+                        tier = similarity_tier(sim_score, policy.similarity_cutoffs)
+                        if tier:
+                            score -= policy.similarity_penalties.get(tier, 0)
+                            severity, label = _SIMILARITY_LABELS[tier]
                             flags.append(
                                 {
-                                    "severity": "high",
-                                    "detail": f"Strong scam pattern match: {m.get('type')} ({sim_score:.0%})",
-                                }
-                            )
-                        elif sim_score > 0.6:
-                            score -= 20
-                            flags.append(
-                                {
-                                    "severity": "medium",
-                                    "detail": f"Possible scam pattern: {m.get('type')} ({sim_score:.0%})",
+                                    "severity": severity,
+                                    "detail": f"{label}: {m.get('type')} ({sim_score:.0%})",
                                 }
                             )
         except Exception:

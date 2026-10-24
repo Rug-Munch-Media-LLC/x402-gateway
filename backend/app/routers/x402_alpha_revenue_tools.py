@@ -24,10 +24,20 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from app.core.redis import get_redis
+from app.domain.scoring import band_for, load_policy
 
 logger = logging.getLogger("alpha_tools")
 
 router = APIRouter(prefix="/api/v1/x402-tools", tags=["alpha-tools"])
+
+#: Public verdict labels. The thresholds that select them are policy.
+_RUG_VERDICTS = {
+    "critical": ("CRITICAL_RUG", "AVOID — High probability of active or imminent rug"),
+    "high": ("HIGH_RISK", "AVOID — Multiple red flags detected"),
+    "medium": ("MEDIUM_RISK", "CAUTION — Some warning signs, monitor closely"),
+    "low": ("LOW_RISK", "MONITOR — Minor concerns but mostly clean"),
+    "safe": ("SAFE", "Relatively clean — standard risk management applies"),
+}
 
 # ── Data Source Helpers ──────────────────────────────────────────
 
@@ -405,21 +415,9 @@ async def rug_predictor_live(req: RugPredictorLiveRequest):
             rug_score += 10
 
     # ── Determine Verdict ─────────────────────────────────────────
-    if rug_score >= 70:
-        verdict = "CRITICAL_RUG"
-        action = "AVOID — High probability of active or imminent rug"
-    elif rug_score >= 50:
-        verdict = "HIGH_RISK"
-        action = "AVOID — Multiple red flags detected"
-    elif rug_score >= 30:
-        verdict = "MEDIUM_RISK"
-        action = "CAUTION — Some warning signs, monitor closely"
-    elif rug_score >= 15:
-        verdict = "LOW_RISK"
-        action = "MONITOR — Minor concerns but mostly clean"
-    else:
-        verdict = "SAFE"
-        action = "Relatively clean — standard risk management applies"
+    # Labels are the public contract; the score at which each one applies is
+    # calibration and lives in the resolved scoring policy.
+    verdict, action = _RUG_VERDICTS[band_for(rug_score, load_policy().rug_bands, default="safe")]
 
     return JSONResponse(
         content={
