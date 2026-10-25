@@ -9,6 +9,7 @@ unchanged.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Any
 
 from app.domain.x402.payments.config import ATOMS_PER_CENT, PaymentConfig
 from app.domain.x402.payments.errors import (
@@ -44,6 +45,12 @@ def build_requirements(config: PaymentConfig, price_cents: int) -> Requirements:
     )
 
 
+def _check_field(declared: str, expected: Any, error: type, message: str) -> None:
+    """One comparison: only declared terms are enforced."""
+    if declared and declared.lower() != str(expected).lower():
+        raise error(message)
+
+
 def check_requirements(
     proof: PaymentProof, requirements: Requirements, now_ts: int
 ) -> None:
@@ -56,9 +63,8 @@ def check_requirements(
         raise PaymentExpired("payment authorization expired")
     if proof.amount and int(proof.amount) != requirements.amount_atoms:
         raise AmountMismatch(f"expected {requirements.amount_atoms} atoms")
-    if proof.asset and proof.asset.lower() != requirements.asset.lower():
-        raise AssetMismatch("asset is not the accepted token")
-    if proof.network and proof.network != requirements.network:
-        raise ChainMismatch(f"expected network {requirements.network}")
-    if proof.pay_to and proof.pay_to.lower() != requirements.pay_to.lower():
-        raise RecipientMismatch("payTo is not the configured recipient")
+    _check_field(proof.asset, requirements.asset, AssetMismatch, "wrong asset")
+    _check_field(proof.network, requirements.network, ChainMismatch, "wrong network")
+    _check_field(
+        proof.pay_to, requirements.pay_to, RecipientMismatch, "wrong recipient"
+    )

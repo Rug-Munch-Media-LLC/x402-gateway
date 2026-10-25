@@ -7,11 +7,28 @@ import json
 from dataclasses import dataclass
 
 from app.domain.x402.payments.config import USDC_BASE, PaymentConfig
+from app.domain.x402.payments.gate import PaymentAttempt
 from app.domain.x402.payments.verifier import ChainObservation
 
 PAY_TO = "0x1E3AC01d0fdb976179790BDD02823196A92705C9"
 OTHER_ADDRESS = "0x000000000000000000000000000000000000dEaD"
 NETWORK = "eip155:8453"
+
+
+def attempt(
+    tool: tuple[str, int],
+    agent_id: str = "a",
+    x_payment: str | None = None,
+    now_ts: int | None = None,
+) -> PaymentAttempt:
+    """Build the gate argument for one (tool, price) call."""
+    return PaymentAttempt(
+        tool=tool[0],
+        price_cents=tool[1],
+        agent_id=agent_id,
+        x_payment=x_payment,
+        now_ts=now_ts,
+    )
 
 
 def make_config(**overrides) -> PaymentConfig:
@@ -27,32 +44,34 @@ def make_config(**overrides) -> PaymentConfig:
     return PaymentConfig(**values)
 
 
-def v2_header(
-    *,
-    amount: str = "20000",
-    asset: str = USDC_BASE,
-    network: str = NETWORK,
-    pay_to: str = PAY_TO,
-    valid_before: int | None = None,
-    nonce: str = "0x" + "ab" * 32,
-) -> str:
+def v2_header(**overrides) -> str:
+    """Build a base64 x402 v2 header; keyword args override any field."""
+    fields = {
+        "amount": "20000",
+        "asset": USDC_BASE,
+        "network": NETWORK,
+        "pay_to": PAY_TO,
+        "valid_before": 4_102_444_800,
+        "nonce": "0x" + "ab" * 32,
+    }
+    fields.update(overrides)
     payload = {
         "x402Version": 2,
         "accepted": {
             "scheme": "exact",
-            "network": network,
-            "asset": asset,
-            "amount": amount,
-            "payTo": pay_to,
+            "network": fields["network"],
+            "asset": fields["asset"],
+            "amount": fields["amount"],
+            "payTo": fields["pay_to"],
         },
         "payload": {
             "signature": "0xsig",
             "authorization": {
                 "from": OTHER_ADDRESS,
-                "to": pay_to,
-                "value": amount,
-                "nonce": nonce,
-                "validBefore": valid_before or 4_102_444_800,
+                "to": fields["pay_to"],
+                "value": fields["amount"],
+                "nonce": fields["nonce"],
+                "validBefore": fields["valid_before"],
             },
         },
     }

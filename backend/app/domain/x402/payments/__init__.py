@@ -18,7 +18,7 @@ from app.domain.x402.payments.errors import (
     VerificationFailed,
     to_http_exception,
 )
-from app.domain.x402.payments.gate import PaymentGate
+from app.domain.x402.payments.gate import PaymentAttempt, PaymentGate
 from app.domain.x402.payments.header import PaymentProof, decode_payment_header
 from app.domain.x402.payments.nonce import (
     ClaimOutcome,
@@ -45,6 +45,7 @@ __all__ = [
     "InvalidPaymentHeader",
     "MemoryNonceStore",
     "NonceStore",
+    "PaymentAttempt",
     "PaymentConfig",
     "PaymentError",
     "PaymentExpired",

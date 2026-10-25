@@ -15,7 +15,14 @@ from app.domain.x402.payments import (
     settle_payment,
 )
 from app.domain.x402.payments.nonce import ClaimOutcome
-from x402_fakes import FakeReader, FakeSettler, good_observation, make_config, v2_header
+from x402_fakes import (
+    FakeReader,
+    FakeSettler,
+    attempt,
+    good_observation,
+    make_config,
+    v2_header,
+)
 
 TOOL = ("get_deployer_reputation", 2)
 
@@ -51,12 +58,12 @@ def test_verification_failure_never_settles(reader, error):
     settler = FakeSettler()
     gate = build_gate(reader, settler)
     if error is None:  # control case: happy path settles exactly once
-        context = run(gate.authorize(*TOOL, agent_id="a", x_payment=v2_header()))
+        context = run(gate.authorize(attempt(TOOL, "a", v2_header())))
         assert context["settlement_tx"] == settler.tx_hash
         assert settler.calls == 1
         return
     with pytest.raises(error):
-        run(gate.authorize(*TOOL, agent_id="a", x_payment=v2_header()))
+        run(gate.authorize(attempt(TOOL, "a", v2_header())))
     assert settler.calls == 0
 
 
@@ -66,12 +73,12 @@ def test_retry_of_same_proof_is_idempotent_and_settles_once():
     header = v2_header()
     first = run(
         build_gate(FakeReader(good_observation()), settler, store).authorize(
-            *TOOL, "a", header
+            attempt(TOOL, "a", header)
         )
     )
     second = run(
         build_gate(FakeReader(good_observation()), settler, store).authorize(
-            *TOOL, "a", header
+            attempt(TOOL, "a", header)
         )
     )
     assert first["idempotent"] is False
@@ -86,14 +93,14 @@ def test_settlement_failure_releases_claim_so_client_can_retry():
     with pytest.raises(SettlementError):
         run(
             build_gate(FakeReader(good_observation()), failing, store).authorize(
-                *TOOL, "a", v2_header()
+                attempt(TOOL, "a", v2_header())
             )
         )
 
     recovering = FakeSettler()
     context = run(
         build_gate(FakeReader(good_observation()), recovering, store).authorize(
-            *TOOL, "a", v2_header()
+            attempt(TOOL, "a", v2_header())
         )
     )
     assert context["idempotent"] is False

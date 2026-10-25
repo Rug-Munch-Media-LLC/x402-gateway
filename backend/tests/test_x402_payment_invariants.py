@@ -25,6 +25,7 @@ from x402_fakes import (
     OTHER_ADDRESS,
     PAY_TO,
     FakeReader,
+    attempt,
     good_observation,
     legacy_header,
     make_config,
@@ -51,7 +52,7 @@ def build_gate(reader=None, settler=None, nonce_store=None) -> PaymentGate:
 
 def test_unpaid_request_raises_402_with_valid_accepts():
     with pytest.raises(PaymentRequired) as raised:
-        run(build_gate().authorize(*PAID_TOOL, agent_id="agent-1"))
+        run(build_gate().authorize(attempt(PAID_TOOL, "agent-1")))
 
     error = raised.value
     assert error.status_code == 402
@@ -67,7 +68,7 @@ def test_unpaid_request_raises_402_with_valid_accepts():
 
 def test_free_tool_needs_no_payment_and_reader_untouched():
     reader = FakeReader(observation=good_observation())
-    context = run(build_gate(reader=reader).authorize(*FREE_TOOL, agent_id="a"))
+    context = run(build_gate(reader=reader).authorize(attempt(FREE_TOOL, "a")))
     assert context["tier"] == "free"
     assert reader.calls == 0
 
@@ -75,7 +76,7 @@ def test_free_tool_needs_no_payment_and_reader_untouched():
 @pytest.mark.parametrize("header", ["not-base64!!", "eyJmb28iOiJiYXIifQ=="])
 def test_malformed_proof_is_rejected(header):
     with pytest.raises(InvalidPaymentHeader) as raised:
-        run(build_gate().authorize(*PAID_TOOL, agent_id="a", x_payment=header))
+        run(build_gate().authorize(attempt(PAID_TOOL, "a", header)))
     assert to_http_exception(raised.value).status_code == 402
 
 
@@ -84,10 +85,7 @@ def test_expired_authorization_is_rejected_before_chain_io():
     with pytest.raises(PaymentExpired):
         run(
             build_gate(reader=reader).authorize(
-                *PAID_TOOL,
-                agent_id="a",
-                x_payment=v2_header(valid_before=1_000),
-                now_ts=2_000,
+                attempt(PAID_TOOL, "a", v2_header(valid_before=1_000), now_ts=2_000)
             )
         )
     assert reader.calls == 0
@@ -104,11 +102,7 @@ def test_expired_authorization_is_rejected_before_chain_io():
 )
 def test_declared_terms_must_match(header_kwargs, error):
     with pytest.raises(error):
-        run(
-            build_gate().authorize(
-                *PAID_TOOL, agent_id="a", x_payment=v2_header(**header_kwargs)
-            )
-        )
+        run(build_gate().authorize(attempt(PAID_TOOL, "a", v2_header(**header_kwargs))))
 
 
 def test_legacy_tx_hash_header_still_verifies():
@@ -116,9 +110,7 @@ def test_legacy_tx_hash_header_still_verifies():
     gate = build_gate(
         reader=FakeReader(observation=good_observation(value_atoms=20_000))
     )
-    context = run(
-        gate.authorize(*PAID_TOOL, agent_id="a", x_payment=legacy_header(tx_hash))
-    )
+    context = run(gate.authorize(attempt(PAID_TOOL, "a", legacy_header(tx_hash))))
     assert context["paid_via_x402"] == tx_hash
 
 
@@ -126,14 +118,14 @@ def test_replay_on_a_different_tool_is_rejected():
     store = MemoryNonceStore()
     run(
         build_gate(nonce_store=store).authorize(
-            "get_deployer_reputation", 2, "a", x_payment=v2_header()
+            attempt(("get_deployer_reputation", 2), "a", v2_header())
         )
     )
     with pytest.raises(PaymentReplay) as raised:
         rich_reader = FakeReader(observation=good_observation(value_atoms=30_000))
         run(
             build_gate(reader=rich_reader, nonce_store=store).authorize(
-                "find_similar_tokens", 3, "a", x_payment=v2_header(amount="30000")
+                attempt(("find_similar_tokens", 3), "a", v2_header(amount="30000"))
             )
         )
     assert to_http_exception(raised.value).status_code == 410

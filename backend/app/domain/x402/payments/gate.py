@@ -26,6 +26,17 @@ NONCE_TTL_SECONDS = 86_400
 
 
 @dataclass(frozen=True)
+class PaymentAttempt:
+    """Everything the gate needs to judge one call."""
+
+    tool: str
+    price_cents: int
+    agent_id: str
+    x_payment: str | None = None
+    now_ts: int | None = None
+
+
+@dataclass(frozen=True)
 class PaymentGate:
     """Authorizes one paid call at a time against injected collaborators."""
 
@@ -34,47 +45,45 @@ class PaymentGate:
     nonce_store: NonceStore
     settler: SettlementClient | None = None
 
-    async def authorize(
-        self,
-        tool: str,
-        price_cents: int,
-        agent_id: str,
-        x_payment: str | None = None,
-        now_ts: int | None = None,
-    ) -> dict[str, Any]:
+    async def authorize(self, attempt: PaymentAttempt) -> dict[str, Any]:
         """Return the payment context for an authorized call.
 
         Raises a :class:`PaymentError` subclass otherwise; never returns a
         half-authorized context.
         """
-        if price_cents <= 0:
+        if attempt.price_cents <= 0:
             return {
-                "agent_id": agent_id,
-                "tool": tool,
+                "agent_id": attempt.agent_id,
+                "tool": attempt.tool,
                 "tier": "free",
                 "paid_via_x402": None,
             }
 
-        if not x_payment:
+        if not attempt.x_payment:
             raise PaymentRequired(
-                build_challenge(self.config, tool, agent_id, price_cents)
+                build_challenge(
+                    self.config,
+                    attempt.tool,
+                    attempt.agent_id,
+                    attempt.price_cents,
+                )
             )
 
-        proof = decode_payment_header(x_payment)
-        requirements = build_requirements(self.config, price_cents)
-        check_requirements(proof, requirements, now_ts or int(time.time()))
+        proof = decode_payment_header(attempt.x_payment)
+        requirements = build_requirements(self.config, attempt.price_cents)
+        check_requirements(proof, requirements, attempt.now_ts or int(time.time()))
 
         verified = await verify_payment(proof, requirements, self.reader)
 
-        scope = f"{tool}:{agent_id}"
+        scope = f"{attempt.tool}:{attempt.agent_id}"
         outcome = await self.nonce_store.claim(
             verified.tx_hash, scope, NONCE_TTL_SECONDS
         )
         if outcome is ClaimOutcome.REPLAY:
             raise PaymentReplay("payment proof already used", tx_hash=verified.tx_hash)
         context: dict[str, Any] = {
-            "agent_id": agent_id,
-            "tool": tool,
+            "agent_id": attempt.agent_id,
+            "tool": attempt.tool,
             "tier": "pro",
             "paid_via_x402": verified.tx_hash,
             "amount_atoms": verified.paid_amount_atoms,

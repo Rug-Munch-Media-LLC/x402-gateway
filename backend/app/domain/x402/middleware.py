@@ -28,6 +28,7 @@ from app.domain.x402.payments import (
     verify_payment,
 )
 from app.domain.x402.payments.challenge import build_challenge
+from app.domain.x402.payments.gate import PaymentAttempt
 from app.domain.x402.payments.web3_reader import Web3ChainReader
 from fastapi import HTTPException, Request
 
@@ -232,6 +233,12 @@ async def require_payment(
     gate = gate or _build_gate(catalog)
     x_payment = request.headers.get("X-Payment") if request is not None else None
     try:
-        return await gate.authorize(tool, _price_cents(tool), agent_id, x_payment)
+        attempt = PaymentAttempt(
+            tool=tool,
+            price_cents=_price_cents(tool),
+            agent_id=agent_id,
+            x_payment=x_payment,
+        )
+        return await gate.authorize(attempt)
     except PaymentError as error:
         raise to_http_exception(error) from error

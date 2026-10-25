@@ -57,35 +57,55 @@ def _b64_json(raw: str) -> dict[str, Any]:
     return data
 
 
-def decode_payment_header(x_payment: str | None) -> PaymentProof:
-    """Decode and normalize an X-Payment header value."""
-    if not x_payment or not x_payment.strip():
-        raise InvalidPaymentHeader("missing X-Payment header")
-    data = _b64_json(x_payment.strip())
+def _decode_json(raw: str) -> dict[str, Any]:
+    try:
+        decoded = base64.b64decode(raw, validate=True).decode()
+        data = json.loads(decoded)
+    except (binascii.Error, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise InvalidPaymentHeader("X-Payment is not valid base64 JSON") from exc
+    if not isinstance(data, dict):
+        raise InvalidPaymentHeader("X-Payment payload must be a JSON object")
+    return data
 
-    tx_hash = data.get("tx_hash")
-    if tx_hash is not None and not _TX_HASH.match(str(tx_hash)):
+
+def _tx_hash(value: Any) -> str | None:
+    if value is None:
+        return None
+    text = str(value)
+    if not _TX_HASH.match(text):
         raise InvalidPaymentHeader("X-Payment tx_hash is not a 32-byte hex hash")
+    return text
 
+
+def _valid_before(value: Any) -> int | None:
+    return int(value) if value else None
+
+
+def _build_proof(data: dict[str, Any]) -> PaymentProof:
     accepted = data.get("accepted") or {}
-    auth = (data.get("payload") or {}).get("authorization") or {}
+    payload = data.get("payload") or {}
+    auth = payload.get("authorization") or {}
     if auth and not accepted:
         raise InvalidPaymentHeader("X-Payment payload lacks accepted requirements")
-
     proof = PaymentProof(
-        tx_hash=str(tx_hash) if tx_hash else None,
-        signature=str(
-            (data.get("payload") or {}).get("signature") or data.get("signature") or ""
-        ),
+        tx_hash=_tx_hash(data.get("tx_hash")),
+        signature=str(payload.get("signature") or data.get("signature") or ""),
         network=str(accepted.get("network") or ""),
         asset=str(accepted.get("asset") or ""),
         amount=str(accepted.get("amount") or ""),
         pay_to=str(accepted.get("payTo") or ""),
         payer=str(auth.get("from") or ""),
-        valid_before=int(auth["validBefore"]) if auth.get("validBefore") else None,
+        valid_before=_valid_before(auth.get("validBefore")),
         nonce=str(auth.get("nonce") or ""),
         raw=data,
     )
     if not proof.replay_key:
         raise InvalidPaymentHeader("payment proof has no tx hash or nonce")
     return proof
+
+
+def decode_payment_header(x_payment: str | None) -> PaymentProof:
+    """Decode and normalize an X-Payment header value."""
+    if not x_payment or not x_payment.strip():
+        raise InvalidPaymentHeader("missing X-Payment header")
+    return _build_proof(_decode_json(x_payment.strip()))

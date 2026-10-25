@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from app.domain.x402.payments import (
     MemoryNonceStore,
+    PaymentAttempt,
     PaymentError,
     PaymentGate,
     to_http_exception,
@@ -31,12 +32,13 @@ def build_app(store=None) -> FastAPI:
     @app.get("/paid")
     async def paid(request: Request):
         try:
-            return await gate.authorize(
-                "get_deployer_reputation",
-                PRICE_CENTS,
-                "agent-1",
-                request.headers.get("X-Payment"),
+            attempt = PaymentAttempt(
+                tool="get_deployer_reputation",
+                price_cents=PRICE_CENTS,
+                agent_id="agent-1",
+                x_payment=request.headers.get("X-Payment"),
             )
+            return await gate.authorize(attempt)
         except PaymentError as error:
             raise to_http_exception(error) from error
 
