@@ -26,113 +26,25 @@ import json
 import logging
 import time
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
+
+from app.routers.x402_enrichment_seam import load_enrichable_categories
+from app.routers.x402_external_errors import (
+    CACHE_FAILURES,
+    CH_FAILURES,
+    HTTP_FAILURES,
+    RAG_FAILURES,
+    SCAM_FAILURES,
+)
 
 logger = logging.getLogger("x402.enrich")
 
 # ── Which tool categories get enrichment ────────────────────────
-# Wallet-centric tools: enrich with labels, scam checking
-# Token-centric tools: enrich with holder label analysis
-# Market tools: skip (low overlap, not worth the lookup)
-ENRICHABLE_CATEGORIES = {
-    "wallet": [
-        "whale",
-        "smartmoney",
-        "cluster",
-        "insider",
-        "copy_trade_finder",
-        "wallet",
-        "portfolio_tracker",
-        "portfolio_aggregate",
-        "wallet_pnl",
-        "smart_money_alpha",
-        "cross_chain_whale",
-        "dormant_whale_alert",
-        "full_wallet_dossier",
-        "wallet_cluster_score",
-        "wallet_drain_scanner",
-        "wallet_label_registry",
-        "whale_network_map",
-        "whale_profile",
-        "whale_scan",
-        "whale_accumulation",
-        "sniper_detect",
-        "syndicate_scan",
-        "syndicate_track",
-        "wallet_graph",
-        "deployer_history",
-        "kol_performance",
-        "insider_network",
-        "airdrop_finder",
-    ],
-    "token": [
-        "audit",
-        "rugshield",
-        "forensics",
-        "comprehensive_audit",
-        "honeypot_check",
-        "rug_pull_predictor",
-        "token_deep_dive",
-        "token_comparison",
-        "fresh_pair",
-        "clone_detect",
-        "launch",
-        "launch_intel",
-        "sniper_alert",
-        "token_age",
-        "token_distribution_health",
-        "token_velocity",
-        "token_watch_create",
-        "token_watch_check",
-        "token_watch_alerts",
-        "token_watch_list",
-        "presale_scanner",
-        "fair_launch_detect",
-        "listing_predictor",
-        "arbitrage_scan",
-        "scam_database",
-        "protocol_risk",
-        "liquidity_depth",
-        "liquidity_migration",
-        "wash_trading",
-        "bundler_detect",
-        "mev_alert",
-        "mev_protection",
-        "liquidity_flow",
-    ],
-    "security": [
-        "urlcheck",
-        "sentiment",
-        "social_signal",
-        "anomaly",
-        "profile_flip",
-        "contract_info",
-        "contract_clone_check",
-        "slither_audit",
-        "storage_reader",
-        "tx_decoder",
-        "reentrancy_scanner",
-        "phantom_mint_detect",
-        "tw_profile",
-        "tw_timeline",
-        "tw_search",
-        "bridge_security",
-        "nft_wash_detector",
-        "risk_monitor",
-        "pulse",
-        "fresh_pair",
-        "sniper_alert",
-    ],
-    "market": [
-        "market_overview",
-        "chain_health",
-        "defi_yield_scanner",
-        "gas_forecast",
-        "anomaly_detector",
-        "launch_intel",
-    ],
-}
+# The tool-ID inventory is METHOD (standards/METHODOLOGY-PROTECTION.md):
+# it is supplied by the private deployment via X402_ENRICHMENT_CATEGORIES
+# and never ships in this public repo. Absent means nothing is enriched.
+ENRICHABLE_CATEGORIES = load_enrichable_categories()
 
 # Per-chain variants — strip _chain suffix and check base tool name
 CHAIN_SUFFIXES = {
@@ -268,7 +180,11 @@ def extract_addresses(result: dict[str, Any], tool_name: str) -> list[str]:
         if isinstance(items, list):
             for item in items:
                 if isinstance(item, dict):
-                    addr = item.get("address") or item.get("wallet") or item.get("token_address")
+                    addr = (
+                        item.get("address")
+                        or item.get("wallet")
+                        or item.get("token_address")
+                    )
                     if addr and isinstance(addr, str) and len(addr) >= 32:
                         addresses.add(addr)
                 elif isinstance(item, str) and len(item) >= 32:
@@ -330,8 +246,10 @@ def lookup_labels(addresses: list[str]) -> tuple[dict[str, list[WalletLabel]], f
             )
             results[addr].append(label)
 
-    except Exception as e:
-        logger.warning(f"CH label lookup failed: {e}")
+    except CH_FAILURES as exc:
+        logger.warning(
+            "ch_label_lookup_failed addresses=%d error=%s", len(addresses), exc
+        )
         return {}, (time.time() - t0) * 1000
 
     return results, (time.time() - t0) * 1000
@@ -385,7 +303,9 @@ def search_similar_patterns(
                                 "collection": h.get("collection", ""),
                                 "score": round(h.get("score", 0), 3),
                                 "type": h.get("metadata", {}).get("type", ""),
-                                "description": h.get("metadata", {}).get("description", "")[:200],
+                                "description": h.get("metadata", {}).get(
+                                    "description", ""
+                                )[:200],
                             }
                             for h in hits[:2]
                         ],
@@ -393,12 +313,12 @@ def search_similar_patterns(
                     patterns.append(pattern)
                     if r:
                         r.setex(cache_key, ENRICH_CACHE_TTL, json.dumps(pattern))
-            except Exception as e:
-                logger.debug(f"RAG search failed for {addr[:10]}: {e}")
+            except RAG_FAILURES as exc:
+                logger.debug("rag_search_failed address=%s error=%s", addr[:10], exc)
                 continue
 
-    except Exception as e:
-        logger.debug(f"RAG enrichment unavailable: {e}")
+    except RAG_FAILURES as exc:
+        logger.debug("rag_enrichment_unavailable error=%s", exc)
 
     return patterns, (time.time() - t0) * 1000
 
@@ -420,7 +340,10 @@ def build_risk_summary(
         parts.append(f"{len(sanctioned)} OFAC-sanctioned wallet(s)")
 
     scam_count = sum(
-        1 for v in labels.values() for l in v if l.label_category in ("phish-hack", "scam", "etherscan-phish-hack-list")
+        1
+        for v in labels.values()
+        for l in v
+        if l.label_category in ("phish-hack", "scam", "etherscan-phish-hack-list")
     )
     if scam_count:
         parts.append(f"{scam_count} known phishing/scam address(es) detected")
@@ -454,7 +377,7 @@ def enrich_tool_response(
 
     try:
         r = _redis()
-    except Exception:
+    except CACHE_FAILURES:
         r = None
 
     # Determine enrichment type
@@ -499,7 +422,9 @@ def enrich_tool_response(
 
         for addr in addresses[:5]:
             try:
-                result = asyncio.run(detect_scam_patterns({"address": addr, "chain": "ethereum"}, 0.65))
+                result = asyncio.run(
+                    detect_scam_patterns({"address": addr, "chain": "ethereum"}, 0.65)
+                )
                 if result and result.get("risk_score", 0) > 0:
                     scam_flags.append(
                         {
@@ -508,15 +433,19 @@ def enrich_tool_response(
                             "patterns": result.get("patterns", [])[:3],
                         }
                     )
-            except Exception:
-                pass
-    except Exception:
-        pass
+            except SCAM_FAILURES as exc:
+                logger.warning(
+                    "scam_detection_failed address=%s error=%s", addr[:10], exc
+                )
+    except (ImportError, AttributeError, RuntimeError) as exc:
+        logger.warning("scam_detection_unavailable error=%s", exc)
 
     # 5c. LLM-synthesized summary (DeepSeek Flash, $0.0003/call)
     llm_summary = ""
     if enrichment.risk_summary and scam_flags:
-        llm_summary = _synthesize_enrichment(enrichment.risk_summary, scam_flags, tool_name)
+        llm_summary = _synthesize_enrichment(
+            enrichment.risk_summary, scam_flags, tool_name
+        )
 
     # 5d. Cron intel injection: recent RMI intelligence briefings
     intel_context = _load_recent_intel(r)
@@ -528,15 +457,17 @@ def enrich_tool_response(
         from app.routers.x402_advanced_tools import compute_confidence
 
         raw_result["_confidence"] = compute_confidence(raw_result)
-    except Exception:
-        pass
+    except (ImportError, AttributeError, KeyError, TypeError, ValueError) as exc:
+        logger.debug("confidence_score_failed error=%s", exc)
 
     # 6. Merge into response
     raw_result["_enrichment"] = {
         "source": "wallet_memory_bank",
         "labels_found": sum(1 for v in labels.values() if v),
         "addresses_checked": len(addresses),
-        "sanctioned": sanction_count if (sanction_count := len(sanctioned)) > 0 else None,
+        "sanctioned": sanction_count
+        if (sanction_count := len(sanctioned)) > 0
+        else None,
         "risk_summary": enrichment.risk_summary or None,
         "llm_summary": llm_summary or None,
         "scam_flags": scam_flags if scam_flags else None,
@@ -576,7 +507,9 @@ def enrich_tool_response(
     if sanction_count > 0:
         _fire_enrichment_alert(tool_name, "sanctioned", sanctioned, r)
     if scam_flags:
-        _fire_enrichment_alert(tool_name, "scam_pattern", [s["address"] for s in scam_flags], r)
+        _fire_enrichment_alert(
+            tool_name, "scam_pattern", [s["address"] for s in scam_flags], r
+        )
 
     # 8. Track addresses for RAG discovery pipeline
     if addresses:
@@ -588,13 +521,13 @@ def enrich_tool_response(
                         {
                             "address": addr,
                             "tool": tool_name,
-                            "timestamp": datetime.utcnow().isoformat(),
+                            "timestamp": datetime.now(UTC).isoformat(),
                         }
                     ),
                 )
             r.ltrim("x402:recent:addresses", 0, 999)
-        except Exception:
-            pass
+        except CACHE_FAILURES as exc:
+            logger.warning("recent_addresses_track_failed error=%s", exc)
 
     return raw_result
 
@@ -626,7 +559,8 @@ def _load_recent_intel(r=None) -> dict | None:
             "tokens_scanned": intel.get("tokens_scanned", 0),
             "timestamp": intel.get("timestamp", 0),
         }
-    except Exception:
+    except CACHE_FAILURES as exc:
+        logger.debug("cron_intel_unavailable error=%s", exc)
         return None
 
 
@@ -664,13 +598,17 @@ def _synthesize_enrichment(risk_summary: str, scam_flags: list, tool_name: str) 
         req = urllib.request.Request(
             "https://api.deepseek.com/v1/chat/completions",
             data=body,
-            headers={"Content-Type": "application/json", "Authorization": f"Bearer {api_key}"},
+            headers={
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer {api_key}",
+            },
         )
         r = urllib.request.urlopen(req, timeout=5)
         d = json.loads(r.read())
         return d["choices"][0]["message"]["content"].strip().strip('"')
-    except Exception:
-        return ""  # Best-effort — never block enrichment on LLM failure
+    except HTTP_FAILURES as exc:
+        logger.debug("llm_synthesis_failed tool=%s error=%s", tool_name, exc)
+        return ""  # Best-effort: never block enrichment on LLM failure
 
 
 # ── Alert Hooks ──────────────────────────────────────────────
@@ -691,9 +629,11 @@ def _fire_enrichment_alert(tool_name: str, alert_type: str, data: list, r=None):
         )
         r.lpush("x402:alerts:high_risk", alert)
         r.ltrim("x402:alerts:high_risk", 0, 999)  # Keep last 1000
-        logger.warning(f"ENRICHMENT ALERT: {alert_type} in {tool_name}: {data}")
-    except Exception:
-        pass
+        logger.warning(
+            "enrichment_alert_fired alert_type=%s tool=%s", alert_type, tool_name
+        )
+    except CACHE_FAILURES as exc:
+        logger.warning("enrichment_alert_failed tool=%s error=%s", tool_name, exc)
 
 
 # ── Cross-Chain Label Propagation ────────────────────────────
@@ -728,10 +668,10 @@ def propagate_labels_cross_chain():
               AND scam.chain_id NOT IN ('','unknown')
             LIMIT 100000
         """)
-        logger.info(f"Cross-chain propagation: {count} labels propagated")
+        logger.info("cross_chain_propagation_done count=%d", count)
         return count
-    except Exception as e:
-        logger.warning(f"Cross-chain propagation failed: {e}")
+    except CH_FAILURES as exc:
+        logger.warning("cross_chain_propagation_failed error=%s", exc)
         return 0
 
 
@@ -745,8 +685,10 @@ def get_cached_enrichment(address: str) -> dict | None:
         cached = r.get(f"x402:enrich:{address}")
         if cached:
             return json.loads(cached)
-    except Exception:
-        pass
+    except CACHE_FAILURES as exc:
+        logger.debug(
+            "cached_enrichment_lookup_failed address=%s error=%s", address, exc
+        )
     return None
 
 
@@ -762,11 +704,14 @@ def _get_etherscan_key() -> str:
 
         load_dotenv("/app/.env", override=True)
         return os.getenv("ETHERSCAN_API_KEY", "")
-    except Exception:
+    except (ImportError, OSError) as exc:
+        logger.debug("etherscan_key_unavailable error=%s", exc)
         return ""
 
 
-def lookup_contract_names(addresses: list[str], chain: str = "ethereum") -> dict[str, str]:
+def lookup_contract_names(
+    addresses: list[str], chain: str = "ethereum"
+) -> dict[str, str]:
     """
     Live Etherscan V2 contract name lookups for unknown addresses.
     Returns {address: contract_name} dict.
@@ -819,8 +764,8 @@ def lookup_contract_names(addresses: list[str], chain: str = "ethereum") -> dict
                 name = contract.get("ContractName", "")
                 if name and name != addr:
                     results[addr] = name
-        except Exception:
-            pass
+        except HTTP_FAILURES as exc:
+            logger.warning("etherscan_lookup_failed address=%s error=%s", addr, exc)
         time.sleep(0.25)  # Respect 5/sec rate limit
 
     return results
@@ -842,7 +787,15 @@ def preload_enrichment_cache(addresses: list[str]):
                 r.setex(
                     f"x402:enrich:{addr}",
                     1800,
-                    json.dumps({"labels": [{"category": l.label_category, "name": l.label_name} for l in labels]}),
+                    json.dumps(
+                        {
+                            "labels": [
+                                {"category": l.label_category, "name": l.label_name}
+                                for l in labels
+                            ]
+                        }
+                    ),
                 )
-        except Exception:
+        except CACHE_FAILURES as exc:
+            logger.warning("preload_enrichment_failed address=%s error=%s", addr, exc)
             continue
