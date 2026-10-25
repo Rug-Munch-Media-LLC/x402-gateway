@@ -6,13 +6,11 @@ Per v4.0 §T34. Endpoints:
   GET  /api/v1/x402/receipts/{tx_hash}  — payment receipt
   POST /api/v1/x402/verify     — verify a payment header
 """
+
 from __future__ import annotations
 
 import logging
 from typing import Any
-
-from fastapi import APIRouter, HTTPException, Request
-from pydantic import BaseModel, Field
 
 from app.catalog.service import get_catalog
 from app.domain.x402.middleware import (
@@ -22,8 +20,14 @@ from app.domain.x402.middleware import (
     verify_payment_header,
     verify_payment_on_chain,
 )
+from fastapi import APIRouter, HTTPException, Request
+from pydantic import BaseModel, Field
 
 router = APIRouter(prefix="/api/v1/x402", tags=["x402"])
+logger = logging.getLogger(__name__)
+
+# Degradable read failures (store/driver/runtime). Anything else propagates.
+_READ_ERRORS = (AttributeError, KeyError, OSError, RuntimeError, TypeError, ValueError)
 
 
 class CatalogResponse(BaseModel):
@@ -63,7 +67,9 @@ async def usage(request: Request) -> UsageResponse:
     """Per-agent usage stats: calls made, $ spent, top tools."""
     catalog = get_catalog()
     await catalog._init_stores()
-    agent_id = request.headers.get("X-Agent-Id") or request.headers.get("X-Api-Key") or "anon"
+    agent_id = (
+        request.headers.get("X-Agent-Id") or request.headers.get("X-Api-Key") or "anon"
+    )
     daily_calls = 0
     paid_calls = 0
     total_usd = 0.0
@@ -71,11 +77,12 @@ async def usage(request: Request) -> UsageResponse:
     if catalog._health.redis:
         try:
             from datetime import UTC, datetime
+
             day = datetime.now(UTC).strftime("%Y%m%d")
             key = f"x402:rl:{agent_id}:{day}"
             daily_calls = int(await catalog._redis.get(key) or 0)
-        except Exception:
-            pass
+        except _READ_ERRORS as error:
+            logger.warning("x402_usage_counter_unavailable error=%s", error)
     if catalog._health.postgres:
         try:
             async with catalog._pg_pool.acquire() as conn:
@@ -87,17 +94,22 @@ async def usage(request: Request) -> UsageResponse:
             for r in rows:
                 paid_calls += 1
                 total_usd += float(r["amount_usd"] or 0)
-                recent.append({
-                    "tx_hash": r["tx_hash"],
-                    "tool": r["tool"],
-                    "amount_usd": float(r["amount_usd"] or 0),
-                    "paid_at": r["paid_at"].isoformat() if r["paid_at"] else None,
-                })
-        except Exception as e:
-            logging.getLogger(__name__).warning(f"usage_query_fail: {e}")
+                recent.append(
+                    {
+                        "tx_hash": r["tx_hash"],
+                        "tool": r["tool"],
+                        "amount_usd": float(r["amount_usd"] or 0),
+                        "paid_at": r["paid_at"].isoformat() if r["paid_at"] else None,
+                    }
+                )
+        except _READ_ERRORS as error:
+            logger.warning("x402_usage_query_failed error=%s", error)
     return UsageResponse(
-        agent_id=agent_id, daily_calls=daily_calls, free_limit=5,
-        paid_calls=paid_calls, total_usd=round(total_usd, 4),
+        agent_id=agent_id,
+        daily_calls=daily_calls,
+        free_limit=5,
+        paid_calls=paid_calls,
+        total_usd=round(total_usd, 4),
         recent_receipts=recent,
     )
 
@@ -128,8 +140,9 @@ async def receipt(tx_hash: str) -> ReceiptResponse:
         )
     except HTTPException:
         raise
-    except Exception as e:
-        raise HTTPException(500, f"receipt_query_fail: {e}")
+    except _READ_ERRORS as error:
+        logger.warning("x402_receipt_query_failed error=%s", error)
+        raise HTTPException(500, "receipt_query_fail") from error
 
 
 @router.post("/verify")

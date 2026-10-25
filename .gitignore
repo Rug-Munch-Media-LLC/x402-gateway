@@ -47,3 +47,7 @@ coverage/
 htmlcov/
 Thumbs.db
 
+
+# coverage.py artifacts
+.coverage
+.coverage.*
