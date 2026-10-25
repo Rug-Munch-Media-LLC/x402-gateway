@@ -7,11 +7,10 @@ if no valid X-PAYMENT header is provided.
 Tools here mirror the catalog at /api/v1/x402/catalog but require
 USDC payment to our wallet before the request is processed.
 """
+
 from __future__ import annotations
 
 import logging
-
-from fastapi import APIRouter, Query, Request
 
 from app.domain.x402.tools.label_tools import (
     get_entity_labels,
@@ -42,6 +41,7 @@ from app.domain.x402.tools.wallet_tools import (
     get_wallet_analysis,
     get_wallet_history,
 )
+from fastapi import APIRouter, Query, Request
 
 router = APIRouter(prefix="/api/v1/x402-tools", tags=["x402-tools"])
 log = logging.getLogger("x402_tools")

@@ -1,48 +1,34 @@
-"""x402 domain — auto-registers its health check + HTTP routes.
+"""x402 domain — T34 payment layer for AI agents.
 
-T34 from v4.0. Sovereign-first x402 payment layer for AI agents.
-
-Re-exports the legacy models (PaymentFacilitator, X402Tier) for backward
-compatibility with v1 routers that import from app.domain.x402.
+Re-exports are lazy (PEP 562): importing ``app.domain.x402.payments`` must not
+drag in routers, health registration or an app-wide settings module. Each name
+is imported on first access, so a missing optional dependency breaks only the
+caller that asked for it.
 """
+
 from __future__ import annotations
 
-from app.core import health as health_mod
-from app.core.health import DomainHealth
+import logging
+from importlib import import_module
+from typing import Any
 
+log = logging.getLogger(__name__)
 
-async def _health_check() -> DomainHealth:
-    """x402 health: catalog + middleware available."""
-    try:
-        from app.domain.x402.middleware import PRICING
-        return DomainHealth(
-            name="x402",
-            healthy=True,
-            details={"tools": len(PRICING), "middleware": "available"},
-        )
-    except Exception as e:
-        return DomainHealth(name="x402", healthy=False, error=str(e))
-
-
-health_mod.register_health_check("x402", _health_check)
-
-
-# Re-export models for backward compat with v1 routers and tests
-from app.domain.x402.models import (
-    PaymentFacilitator,
-    PaymentReceipt,
-    ToolCatalog,
-    ToolCatalogEntry,
-    ToolPricing,
-    X402Tier,
-)
-
-# Re-export the new T34 router
-from app.domain.x402.router import router  # noqa: E402
-from app.domain.x402.service import X402Service
+_LAZY_EXPORTS: dict[str, tuple[str, str]] = {
+    "PaymentFacilitator": ("app.domain.x402.models", "PaymentFacilitator"),
+    "PaymentReceipt": ("app.domain.x402.models", "PaymentReceipt"),
+    "ToolCatalog": ("app.domain.x402.models", "ToolCatalog"),
+    "ToolCatalogEntry": ("app.domain.x402.models", "ToolCatalogEntry"),
+    "ToolPricing": ("app.domain.x402.models", "ToolPricing"),
+    "X402Tier": ("app.domain.x402.models", "X402Tier"),
+    "X402Service": ("app.domain.x402.service", "X402Service"),
+    "router": ("app.domain.x402.router", "router"),
+    "PaymentGate": ("app.domain.x402.payments.gate", "PaymentGate"),
+}
 
 __all__ = [
     "PaymentFacilitator",
+    "PaymentGate",
     "PaymentReceipt",
     "ToolCatalog",
     "ToolCatalogEntry",
@@ -51,3 +37,18 @@ __all__ = [
     "X402Tier",
     "router",
 ]
+
+
+def __getattr__(name: str) -> Any:
+    """Resolve a public re-export on first access."""
+    try:
+        module_name, attribute = _LAZY_EXPORTS[name]
+    except KeyError as exc:
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}") from exc
+    value = getattr(import_module(module_name), attribute)
+    globals()[name] = value
+    return value
+
+
+def __dir__() -> list[str]:
+    return sorted(__all__)
