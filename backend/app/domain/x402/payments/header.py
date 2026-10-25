@@ -46,17 +46,6 @@ class PaymentProof:
         return key.lower()
 
 
-def _b64_json(raw: str) -> dict[str, Any]:
-    try:
-        decoded = base64.b64decode(raw, validate=True).decode()
-        data = json.loads(decoded)
-    except (binascii.Error, UnicodeDecodeError, json.JSONDecodeError) as exc:
-        raise InvalidPaymentHeader("X-Payment is not valid base64 JSON") from exc
-    if not isinstance(data, dict):
-        raise InvalidPaymentHeader("X-Payment payload must be a JSON object")
-    return data
-
-
 def _decode_json(raw: str) -> dict[str, Any]:
     try:
         decoded = base64.b64decode(raw, validate=True).decode()
@@ -81,22 +70,35 @@ def _valid_before(value: Any) -> int | None:
     return int(value) if value else None
 
 
-def _build_proof(data: dict[str, Any]) -> PaymentProof:
+def _text(value: Any) -> str:
+    """Empty-safe string field extraction."""
+    return str(value or "")
+
+
+def _terms(
+    data: dict[str, Any],
+) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
+    """Split a header into (accepted, payload, authorization)."""
     accepted = data.get("accepted") or {}
     payload = data.get("payload") or {}
     auth = payload.get("authorization") or {}
     if auth and not accepted:
         raise InvalidPaymentHeader("X-Payment payload lacks accepted requirements")
+    return accepted, payload, auth
+
+
+def _build_proof(data: dict[str, Any]) -> PaymentProof:
+    accepted, payload, auth = _terms(data)
     proof = PaymentProof(
         tx_hash=_tx_hash(data.get("tx_hash")),
-        signature=str(payload.get("signature") or data.get("signature") or ""),
-        network=str(accepted.get("network") or ""),
-        asset=str(accepted.get("asset") or ""),
-        amount=str(accepted.get("amount") or ""),
-        pay_to=str(accepted.get("payTo") or ""),
-        payer=str(auth.get("from") or ""),
+        signature=_text(payload.get("signature") or data.get("signature")),
+        network=_text(accepted.get("network")),
+        asset=_text(accepted.get("asset")),
+        amount=_text(accepted.get("amount")),
+        pay_to=_text(accepted.get("payTo")),
+        payer=_text(auth.get("from")),
         valid_before=_valid_before(auth.get("validBefore")),
-        nonce=str(auth.get("nonce") or ""),
+        nonce=_text(auth.get("nonce")),
         raw=data,
     )
     if not proof.replay_key:
