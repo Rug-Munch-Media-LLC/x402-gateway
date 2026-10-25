@@ -950,6 +950,9 @@ def _clean_response(result: dict) -> dict:
     return result
 
 
+from .payment_headers import select_payment_header
+
+
 async def verify_x402_payment(request: Request, tool_id: str, price_usd: float) -> dict[str, Any]:
     """Verify x402 payment header. Returns payment info or 402 response.
 
@@ -958,7 +961,7 @@ async def verify_x402_payment(request: Request, tool_id: str, price_usd: float) 
     Both paths use the same Redis-backed trial tracking.
     """
     # Check for x402 payment header
-    x402_payment = request.headers.get("X-PAYMENT", "")
+    x402_payment, x402_version = select_payment_header(request.headers)
     if not x402_payment:
         # Resolve identifier for trial check: wallet first, then fingerprint, then IP
         wallet = request.headers.get("X-WALLET", "") or request.query_params.get("wallet", "")
@@ -1000,7 +1003,7 @@ async def verify_x402_payment(request: Request, tool_id: str, price_usd: float) 
                 "tool_id": tool_id,
                 "price_usd": price_usd,
                 "payment_required": {
-                    "x402_version": 1,
+                    "x402_version": x402_version,
                     "max_amount": f"{price_usd:.4f}",
                     "payment_type": "USDC",
                     "networks": [

@@ -19,12 +19,11 @@ import os
 import time
 from datetime import UTC, datetime
 
-from fastapi import APIRouter
-from fastapi.responses import JSONResponse
-from pydantic import BaseModel
-
 from app.core.redis import get_redis
 from app.domain.scoring import band_for, load_policy
+from fastapi import APIRouter
+from fastapi.responses import JSONResponse
+from pydantic import BaseModel, Field
 
 logger = logging.getLogger("alpha_tools")
 
@@ -48,11 +47,13 @@ async def fetch_dexscreener(path: str, params: dict | None = None) -> dict | Non
 
     url = f"https://api.dexscreener.com/latest/dex/{path}"
     try:
-        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=10)) as session:
-            async with session.get(url, params=params) as resp:
-                if resp.status == 200:
-                    return await resp.json()
-    except Exception as e:
+        async with (
+            aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=10)) as session,
+            session.get(url, params=params) as resp,
+        ):
+            if resp.status == 200:
+                return await resp.json()
+    except Exception as e:  # noqa: BLE001 — best-effort fetch, any failure means "no data"
         logger.warning(f"DexScreener fetch failed: {e}")
     return None
 
@@ -64,11 +65,13 @@ async def fetch_geckoterminal(path: str) -> dict | None:
     url = f"https://api.geckoterminal.com/api/v2/{path}"
     headers = {"Accept": "application/json"}
     try:
-        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=10)) as session:
-            async with session.get(url, headers=headers) as resp:
-                if resp.status == 200:
-                    return await resp.json()
-    except Exception as e:
+        async with (
+            aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=10)) as session,
+            session.get(url, headers=headers) as resp,
+        ):
+            if resp.status == 200:
+                return await resp.json()
+    except Exception as e:  # noqa: BLE001 — best-effort fetch, any failure means "no data"
         logger.warning(f"GeckoTerminal fetch failed: {e}")
     return None
 
@@ -83,13 +86,31 @@ async def fetch_helius(path: str, params: dict | None = None) -> dict | None:
 
     url = f"https://api.helius.xyz/v0/{path}?api-key={api_key}"
     try:
-        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=10)) as session:
-            async with session.get(url, params=params) as resp:
-                if resp.status == 200:
-                    return await resp.json()
-    except Exception as e:
+        async with (
+            aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=10)) as session,
+            session.get(url, params=params) as resp,
+        ):
+            if resp.status == 200:
+                return await resp.json()
+    except Exception as e:  # noqa: BLE001 — best-effort fetch, any failure means "no data"
         logger.warning(f"Helius fetch failed: {e}")
     return None
+
+
+# ── Tool 1: Whale Copy Trade ─────────────────────────────────────
+
+
+class WhaleCopyTradeRequest(BaseModel):
+    """Which wallet to copy, how far back, and the dust floor.
+
+    ``min_trade_usd`` is a caller-supplied filter, not a scoring input: it only
+    drops dust trades from the response.
+    """
+
+    address: str
+    chain: str = "solana"
+    lookback_hours: int = Field(default=24, ge=1, le=168)
+    min_trade_usd: float = Field(default=0.0, ge=0.0)
 
 
 async def whale_copy_trade(req: WhaleCopyTradeRequest):
@@ -140,8 +161,12 @@ async def whale_copy_trade(req: WhaleCopyTradeRequest):
                                 "amount": amount,
                                 "usd_value": round(usd_value, 2),
                                 "price": token_price,
-                                "type": "buy" if transfer.get("fromUserAccount") == address else "sell",
-                                "timestamp": datetime.fromtimestamp(timestamp, tz=UTC).isoformat(),
+                                "type": "buy"
+                                if transfer.get("fromUserAccount") == address
+                                else "sell",
+                                "timestamp": datetime.fromtimestamp(
+                                    timestamp, tz=UTC
+                                ).isoformat(),
                                 "tx_hash": tx.get("signature", ""),
                             }
                         )
@@ -232,7 +257,9 @@ def _calculate_pnl(trades: list[dict]) -> dict:
     }
 
 
-def _generate_copy_suggestions(trades: list[dict], wallet_info: dict, lookback: int) -> list[dict]:
+def _generate_copy_suggestions(
+    trades: list[dict], wallet_info: dict, lookback: int
+) -> list[dict]:
     """Generate copy trade suggestions based on wallet activity."""
     suggestions = []
 
@@ -417,7 +444,9 @@ async def rug_predictor_live(req: RugPredictorLiveRequest):
     # ── Determine Verdict ─────────────────────────────────────────
     # Labels are the public contract; the score at which each one applies is
     # calibration and lives in the resolved scoring policy.
-    verdict, action = _RUG_VERDICTS[band_for(rug_score, load_policy().rug_bands, default="safe")]
+    verdict, action = _RUG_VERDICTS[
+        band_for(rug_score, load_policy().rug_bands, default="safe")
+    ]
 
     return JSONResponse(
         content={
@@ -502,7 +531,9 @@ async def whale_cluster(req: WhaleClusterRequest):
 
     # Filter by threshold
     cluster_wallets = [
-        {"wallet": w, "similarity": round(s, 3)} for w, s in wallet_scores.items() if s >= threshold and w != address
+        {"wallet": w, "similarity": round(s, 3)}
+        for w, s in wallet_scores.items()
+        if s >= threshold and w != address
     ]
     cluster_wallets.sort(key=lambda x: x["similarity"], reverse=True)
 
@@ -515,7 +546,10 @@ async def whale_cluster(req: WhaleClusterRequest):
         cluster = {"members": [cw["wallet"]], "avg_similarity": cw["similarity"]}
         used.add(cw["wallet"])
         for other in cluster_wallets:
-            if other["wallet"] not in used and abs(other["similarity"] - cw["similarity"]) < 0.1:
+            if (
+                other["wallet"] not in used
+                and abs(other["similarity"] - cw["similarity"]) < 0.1
+            ):
                 cluster["members"].append(other["wallet"])
                 used.add(other["wallet"])
 
@@ -523,7 +557,8 @@ async def whale_cluster(req: WhaleClusterRequest):
             cluster["members"].insert(0, address)  # Add seed wallet
             cluster["size"] = len(cluster["members"])
             cluster["avg_similarity"] = round(
-                sum(wallet_scores.get(w, 0) for w in cluster["members"]) / len(cluster["members"]),
+                sum(wallet_scores.get(w, 0) for w in cluster["members"])
+                / len(cluster["members"]),
                 3,
             )
             clusters.append(cluster)
@@ -531,10 +566,14 @@ async def whale_cluster(req: WhaleClusterRequest):
     # Risk assessment
     if any(c["size"] >= 5 for c in clusters):
         cluster_data["risk_assessment"] = "high"
-        cluster_data["risk_message"] = "Large coordinated cluster detected — possible wash trading or insider network"
+        cluster_data["risk_message"] = (
+            "Large coordinated cluster detected — possible wash trading or insider network"
+        )
     elif any(c["size"] >= 3 for c in clusters):
         cluster_data["risk_assessment"] = "medium"
-        cluster_data["risk_message"] = "Medium cluster detected — wallets showing coordinated behavior"
+        cluster_data["risk_message"] = (
+            "Medium cluster detected — wallets showing coordinated behavior"
+        )
     else:
         cluster_data["risk_assessment"] = "low"
         cluster_data["risk_message"] = "No significant clusters detected"
@@ -556,7 +595,9 @@ async def _find_shared_token_wallets(address: str, chain: str, r) -> dict[str, f
         # Fetch from DexScreener as fallback
         result = await fetch_dexscreener("search", {"q": address})
         if result and result.get("pairs"):
-            tokens = {p.get("baseToken", {}).get("address", "") for p in result["pairs"][:20]}
+            tokens = {
+                p.get("baseToken", {}).get("address", "") for p in result["pairs"][:20]
+            }
 
     # For each token, find other wallets
     shared = {}
@@ -647,7 +688,7 @@ def register_alpha_tool_prices():
                 },
             }
         )
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 — price registration is optional
         logger.warning(f"Failed to register alpha tool prices: {e}")
 
 
