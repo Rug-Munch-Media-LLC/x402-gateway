@@ -1062,7 +1062,6 @@ async def verify_x402_payment(request: Request, tool_id: str, price_usd: float) 
             # Cache successful payment for idempotency (24h TTL)
             if idempotency_key:
                 import hashlib
-                import json
 
                 import redis.asyncio as redis_lib
 
