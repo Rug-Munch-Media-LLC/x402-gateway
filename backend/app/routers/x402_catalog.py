@@ -378,7 +378,9 @@ def get_catalog():
 
         # Add databus-only tools (not in TOOL_PRICES enforcement)
         try:
-            from app.routers.x402_databus_tools import X402_TOOL_PRICING as DATABUS_TOOLS
+            from app.routers.x402_databus_tools import (
+                X402_TOOL_PRICING as DATABUS_TOOLS,
+            )
 
             for tool_id, pricing in DATABUS_TOOLS.items():
                 if tool_id not in all_tools:
@@ -410,12 +412,9 @@ def get_catalog():
         categories = set()
 
     # ── Enrich from gateway configs (add chain info, icons) ──
-    candidates = [
-        "/app/x402-gateway",
-        os.path.join(base_dir, "x402-gateway"),
-        os.path.join(os.path.dirname(base_dir), "x402-gateway"),
-        "/root/backend/x402-gateway",
-    ]
+    from app.routers.x402_gateway_paths import gateway_base_candidates
+
+    candidates = gateway_base_candidates(base_dir)
     gateway_base = None
     for c in candidates:
         if os.path.isdir(c):

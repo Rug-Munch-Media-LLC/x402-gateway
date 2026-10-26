@@ -26,16 +26,20 @@ import json
 import logging
 import time
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
 from typing import Any
 
+from app.routers.x402_enrichment_ops import (
+    apply_side_effects,
+    build_envelope,
+    collect_scam_flags,
+    prune_envelope,
+)
 from app.routers.x402_enrichment_seam import load_enrichable_categories
 from app.routers.x402_external_errors import (
     CACHE_FAILURES,
     CH_FAILURES,
     HTTP_FAILURES,
     RAG_FAILURES,
-    SCAM_FAILURES,
 )
 
 logger = logging.getLogger("x402.enrich")
@@ -131,7 +135,7 @@ def _ch():
 
     from clickhouse_driver import Client
 
-    Client(
+    return Client(
         host=os.getenv("CH_HOST", "rmi-clickhouse"),
         port=int(os.getenv("CH_PORT", "9000")),
         user=os.getenv("CH_USER", "default"),
@@ -360,6 +364,36 @@ def build_risk_summary(
     return ". ".join(parts) + "." if parts else ""
 
 
+def _safe_redis():
+    """Redis client, or None when the cache is unreachable."""
+    try:
+        return _redis()
+    except CACHE_FAILURES:
+        return None
+
+
+def _similar_patterns(category: str, addresses: list[str], r):
+    """RAG similarity search, wallet/security categories only."""
+    if category in ("wallet", "security"):
+        return search_similar_patterns(addresses[:10], r)
+    return [], 0
+
+
+def _inject_intel(raw_result: dict, r) -> None:
+    intel_context = _load_recent_intel(r)
+    if intel_context:
+        raw_result["_intel"] = intel_context
+
+
+def _inject_confidence(raw_result: dict) -> None:
+    try:
+        from app.routers.x402_advanced_tools import compute_confidence
+
+        raw_result["_confidence"] = compute_confidence(raw_result)
+    except (ImportError, AttributeError, KeyError, TypeError, ValueError) as exc:
+        logger.debug("confidence_score_failed error=%s", exc)
+
+
 def enrich_tool_response(
     tool_name: str,
     raw_result: dict[str, Any],
@@ -374,36 +408,17 @@ def enrich_tool_response(
     """
     if opt_out:
         return raw_result
-
-    try:
-        r = _redis()
-    except CACHE_FAILURES:
-        r = None
-
-    # Determine enrichment type
+    r = _safe_redis()
     category = _is_enrichable(tool_name)
-
     if not category:
-        return raw_result  # Not an enrichable tool
-
-    # 1. Extract addresses
+        return raw_result
     addresses = extract_addresses(raw_result, tool_name)
     if not addresses:
         return raw_result
 
-    # 2. Batch ClickHouse label lookup
     labels, ch_ms = lookup_labels(addresses)
-
-    # 3. Identify sanctioned wallets
     sanctioned = [a for a, lbls in labels.items() if any(l.is_sanctioned for l in lbls)]
-
-    # 4. RAG similarity search (only for wallet-centric tools)
-    similar_patterns = []
-    rag_ms = 0
-    if category in ("wallet", "security"):
-        similar_patterns, rag_ms = search_similar_patterns(addresses[:10], r)
-
-    # 5. Build enrichment result
+    similar_patterns, rag_ms = _similar_patterns(category, addresses, r)
     enrichment = EnrichmentResult(
         labels=labels,
         sanctioned=sanctioned,
@@ -413,122 +428,28 @@ def enrich_tool_response(
         rag_ms=rag_ms,
     )
 
-    # 5b. Scam pattern detection (wired from rag_service)
-    scam_flags = []
-    try:
-        import asyncio
-
-        from app.rag_service import detect_scam_patterns
-
-        for addr in addresses[:5]:
-            try:
-                result = asyncio.run(
-                    detect_scam_patterns({"address": addr, "chain": "ethereum"}, 0.65)
-                )
-                if result and result.get("risk_score", 0) > 0:
-                    scam_flags.append(
-                        {
-                            "address": addr[:10] + "...",
-                            "risk_score": result.get("risk_score", 0),
-                            "patterns": result.get("patterns", [])[:3],
-                        }
-                    )
-            except SCAM_FAILURES as exc:
-                logger.warning(
-                    "scam_detection_failed address=%s error=%s", addr[:10], exc
-                )
-    except (ImportError, AttributeError, RuntimeError) as exc:
-        logger.warning("scam_detection_unavailable error=%s", exc)
-
-    # 5c. LLM-synthesized summary (DeepSeek Flash, $0.0003/call)
+    scam_flags = collect_scam_flags(addresses)
     llm_summary = ""
     if enrichment.risk_summary and scam_flags:
         llm_summary = _synthesize_enrichment(
             enrichment.risk_summary, scam_flags, tool_name
         )
 
-    # 5d. Cron intel injection: recent RMI intelligence briefings
-    intel_context = _load_recent_intel(r)
-    if intel_context:
-        raw_result["_intel"] = intel_context
-
-    # 5e. Confidence scoring: quantify data quality for every response
-    try:
-        from app.routers.x402_advanced_tools import compute_confidence
-
-        raw_result["_confidence"] = compute_confidence(raw_result)
-    except (ImportError, AttributeError, KeyError, TypeError, ValueError) as exc:
-        logger.debug("confidence_score_failed error=%s", exc)
-
-    # 6. Merge into response
-    raw_result["_enrichment"] = {
-        "source": "wallet_memory_bank",
-        "labels_found": sum(1 for v in labels.values() if v),
-        "addresses_checked": len(addresses),
-        "sanctioned": sanction_count
-        if (sanction_count := len(sanctioned)) > 0
-        else None,
-        "risk_summary": enrichment.risk_summary or None,
-        "llm_summary": llm_summary or None,
-        "scam_flags": scam_flags if scam_flags else None,
-        "label_details": {
-            a: [
-                {
-                    "category": l.label_category,
-                    "name": l.label_name,
-                    "source": l.source,
-                    "sanctioned": l.is_sanctioned,
-                }
-                for l in lbls
-            ]
-            for a, lbls in labels.items()
-            if lbls
-        }
-        if any(v for v in labels.values())
-        else None,
-        "similar_patterns": similar_patterns if similar_patterns else None,
-        "performance_ms": round(enrichment.lookup_ms + enrichment.rag_ms, 1),
-    }
-
-    # Clean up None values
-    enrich = raw_result["_enrichment"]
-    for k in list(enrich.keys()):
-        if (
-            enrich[k] is None
-            or (isinstance(enrich[k], dict) and not enrich[k])
-            or (isinstance(enrich[k], list) and not enrich[k])
-        ):
-            del enrich[k]
-
-    if not enrich.get("label_details") and not enrich.get("risk_summary"):
-        enrich["note"] = "No wallet labels found for queried addresses"
-
-    # 7. Alert hooks for high-risk findings
-    if sanction_count > 0:
-        _fire_enrichment_alert(tool_name, "sanctioned", sanctioned, r)
-    if scam_flags:
-        _fire_enrichment_alert(
-            tool_name, "scam_pattern", [s["address"] for s in scam_flags], r
-        )
-
-    # 8. Track addresses for RAG discovery pipeline
-    if addresses:
-        try:
-            for addr in addresses[:5]:
-                r.lpush(
-                    "x402:recent:addresses",
-                    json.dumps(
-                        {
-                            "address": addr,
-                            "tool": tool_name,
-                            "timestamp": datetime.now(UTC).isoformat(),
-                        }
-                    ),
-                )
-            r.ltrim("x402:recent:addresses", 0, 999)
-        except CACHE_FAILURES as exc:
-            logger.warning("recent_addresses_track_failed error=%s", exc)
-
+    _inject_intel(raw_result, r)
+    _inject_confidence(raw_result)
+    raw_result["_enrichment"] = prune_envelope(
+        build_envelope(enrichment, addresses, llm_summary, scam_flags)
+    )
+    apply_side_effects(
+        tool_name,
+        {
+            "sanctioned": sanctioned,
+            "scam_pattern": [flag["address"] for flag in scam_flags],
+        },
+        addresses,
+        r,
+        _fire_enrichment_alert,
+    )
     return raw_result
 
 

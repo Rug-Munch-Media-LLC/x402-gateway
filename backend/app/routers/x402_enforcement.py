@@ -30,12 +30,11 @@ from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     import redis as _redis_types
-from fastapi import Request, Response
-from fastapi.responses import JSONResponse
-
 # ── Imports added 2026-06-25: fix missing deps referenced in middleware ──
 from app.core.redis import get_redis
 from app.routers.protection import get_client_id
+from fastapi import Request, Response
+from fastapi.responses import JSONResponse
 
 logger = logging.getLogger("x402_enforcement")
 
@@ -325,12 +324,9 @@ def _load_tool_prices():
     # ─── 2. Enrich from gateway configs (adds chain-specific variants) ────────
     # Try multiple paths: Docker mount, host path, OpenClaw backup
     gateway_base = None
-    for candidate in [
-        "/app/x402-gateway",
-        "/root/backend/x402-gateway",
-        "/srv/rmi/backend/x402-gateway",
-        "/root/.openclaw/backend/x402-gateway",
-    ]:
+    from app.routers.x402_gateway_paths import gateway_base_candidates
+
+    for candidate in gateway_base_candidates():
         if os.path.isdir(candidate):
             gateway_base = candidate
             break
@@ -1547,6 +1543,8 @@ async def x402_enforcement_middleware(request: Request, call_next) -> Response:
     try:
         from app.routers.enforcement_chain import (
             SECURITY_HEADERS as CHAIN_SECURITY_HEADERS,
+        )
+        from app.routers.enforcement_chain import (
             BotDetector,
             EnforcementChain,
             EnforcementContext,
@@ -1727,7 +1725,9 @@ async def x402_enforcement_middleware(request: Request, call_next) -> Response:
                 facilitator = result.get("method", result.get("facilitator", ""))
                 if facilitator:
                     try:
-                        from app.routers.facilitator_health import record_payment_success
+                        from app.routers.facilitator_health import (
+                            record_payment_success,
+                        )
 
                         record_payment_success(facilitator, True)
                     except Exception:
