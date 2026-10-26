@@ -825,19 +825,10 @@ def _build_bazaar_extension(tool_id: str, pricing: dict, accepts: list) -> dict:
     - output.type: always "json"
     """
     # Map our categories to bazaar-standard categories
-    CATEGORY_MAP = {
-        "security": "security",
-        "intelligence": "intelligence",
-        "market": "market-data",
-        "analysis": "analytics",
-        "social": "social",
-        "launchpad": "launchpad",
-        "bundle": "bundles",
-        "defi": "defi",
-        "premium": "premium",
-        "api": "api",
-        "variant": "crypto",
-    }
+    CATEGORY_MAP = { "security": "security", "intelligence": "intelligence",
+        "market": "market-data", "analysis": "analytics", "social": "social",
+        "launchpad": "launchpad", "bundle": "bundles", "defi": "defi",
+        "premium": "premium", "api": "api", "variant": "crypto", }
     category = pricing.get("category", "analysis")
     bazaar_category = CATEGORY_MAP.get(category, category)
 
@@ -851,99 +842,50 @@ def _build_bazaar_extension(tool_id: str, pricing: dict, accepts: list) -> dict:
     first_accept.get("extra", {})
 
     # Build inputSchema matching the bazaar spec's info structure
-    info_input: dict[str, Any] = {
-        "type": "http",
-        "method": http_method,
-    }
+    info_input: dict[str, Any] = { "type": "http", "method": http_method, }
 
     if http_method == "GET":
         # Query params for GET: address and optional chain
-        info_input["queryParams"] = {
-            "address": {
-                "type": "string",
-                "description": f"Blockchain address or identifier for {tool_id}",
-            },
-            "chain": {
-                "type": "string",
-                "description": "Blockchain to query (default: base)",
-            },
-        }
+        info_input["queryParams"] = { "address": { "type": "string",
+                "description": f"Blockchain address or identifier for {tool_id}", },
+            "chain": { "type": "string",
+                "description": "Blockchain to query (default: base)", }, }
     else:
         # Body params for POST: address and chain
         info_input["bodyType"] = "json"
-        info_input["body"] = {
-            "address": {
-                "type": "string",
-                "description": f"Blockchain address or identifier for {tool_id}",
-            },
-            "chain": {
-                "type": "string",
-                "description": "Blockchain to query (default: base)",
-            },
-        }
+        info_input["body"] = { "address": { "type": "string",
+                "description": f"Blockchain address or identifier for {tool_id}", },
+            "chain": { "type": "string",
+                "description": "Blockchain to query (default: base)", }, }
 
-    info = {
-        "input": info_input,
-        "output": {
-            "type": "json",
-            "example": {
+    info = { "input": info_input, "output": { "type": "json", "example": {
                 "data": {"result": "tool output"},
-                "sources_used": ["source1", "source2"],
-            },
-        },
+                "sources_used": ["source1", "source2"], }, },
         "category": bazaar_category,
         "tags": ["crypto", "security", "blockchain", tool_id],
-        "description": pricing.get(
-            "description", f"{tool_id} — Rug Munch Intelligence"
-        ),
-    }
+        "description": pricing.get( "description", f"{tool_id} — Rug Munch Intelligence"
+        ), }
 
     # Schema that validates the info structure per bazaar spec
-    schema = {
-        "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "type": "object",
-        "properties": {
-            "input": {
-                "type": "object",
-                "properties": {
-                    "type": {"type": "string", "const": "http"},
-                    "method": {
-                        "type": "string",
-                        "enum": ["GET", "HEAD", "DELETE"]
+    schema = { "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object", "properties": { "input": { "type": "object", "properties": {
+                    "type": {"type": "string", "const": "http"}, "method": {
+                        "type": "string", "enum": ["GET", "HEAD", "DELETE"]
                         if http_method == "GET"
-                        else ["POST", "PUT", "PATCH"],
-                    },
+                        else ["POST", "PUT", "PATCH"], },
                     "queryParams": {"type": "object"}
                     if http_method == "GET"
-                    else {"type": "object"},
-                    "bodyType": {
-                        "type": "string",
-                        "enum": ["json", "form-data", "text"],
-                    },
-                    "body": {"type": "object"},
-                },
-                "required": ["type", "method"],
-                "additionalProperties": False,
-            },
-            "output": {
-                "type": "object",
-                "properties": {
-                    "type": {"type": "string"},
-                    "example": {"type": "object"},
-                },
-                "required": ["type"],
-            },
+                    else {"type": "object"}, "bodyType": { "type": "string",
+                        "enum": ["json", "form-data", "text"], },
+                    "body": {"type": "object"}, }, "required": ["type", "method"],
+                "additionalProperties": False, }, "output": { "type": "object",
+                "properties": { "type": {"type": "string"},
+                    "example": {"type": "object"}, }, "required": ["type"], },
             "category": {"type": "string"},
             "tags": {"type": "array", "items": {"type": "string"}},
-            "description": {"type": "string"},
-        },
-        "required": ["input"],
-    }
+            "description": {"type": "string"}, }, "required": ["input"], }
 
-    return {
-        "info": info,
-        "schema": schema,
-    }
+    return { "info": info, "schema": schema, }
 
 
 def _build_resource_info(tool_id: str, pricing: dict) -> dict:
@@ -1009,65 +951,37 @@ def build_402_response(tool_id: str, client_id: str = "") -> JSONResponse:
     bazaar = _build_bazaar_extension(tool_id, pricing, accepts)
 
     # ── V2 spec body format (what official SDKs parse) ──
-    v2_body = {
-        "x402Version": 2,
-        "error": "PAYMENT-SIGNATURE header is required",
-        "resource": resource,
-        "accepts": accepts,
-        "extensions": {
-            "bazaar": bazaar,
-        },
+    v2_body = { "x402Version": 2, "error": "PAYMENT-SIGNATURE header is required",
+        "resource": resource, "accepts": accepts, "extensions": { "bazaar": bazaar, },
         # ── Legacy compat fields (not in spec but needed for our gateway clients) ──
-        "error_legacy": "Payment Required",
-        "tool": tool_id,
-        "price": f"${pricing['price_usd']:.2f}",
-        "trial_free": trial_free,
-        "trial_remaining": remaining,
-        "trial_used": remaining <= 0,
-        "wallet_required": remaining == -1,
-        "message": (
+        "error_legacy": "Payment Required", "tool": tool_id,
+        "price": f"${pricing['price_usd']:.2f}", "trial_free": trial_free,
+        "trial_remaining": remaining, "trial_used": remaining <= 0,
+        "wallet_required": remaining == -1, "message": (
             f"Connect a wallet to continue. Your 1 free trial is used — link MetaMask or Phantom to get {trial_free} free calls per tool. From ${pricing['price_usd']:.2f}/call after that."
             if remaining == -1
             else f"All {trial_free} free trial{'s' if trial_free != 1 else ''} used. Pay {pricing['price_atoms']} atoms to use {tool_id}. Pay on {', '.join(CHAIN_NAMES.get(c, c) for c in CHAIN_USDC)}."
-        ),
-        "accepted_chains": list(CHAIN_USDC.keys()),
-        "chain_details": {
-            k: {
-                "network": v["network"],
-                "facilitators": v.get("facilitators", []),
-                "tokens": list(v.get("tokens", {"USDC": v.get("usdc", "")}).keys()),
-            }
+        ), "accepted_chains": list(CHAIN_USDC.keys()), "chain_details": { k: {
+                "network": v["network"], "facilitators": v.get("facilitators", []),
+                "tokens": list(v.get("tokens", {"USDC": v.get("usdc", "")}).keys()), }
             for k, v in CHAIN_USDC.items()
         },
         # ── Legacy compat: nested requirements for our Cloudflare workers ──
-        "x402": {
-            "version": "2",
+        "x402": { "version": "2",
             "requirements": accepts,  # Same array, different field name for backward compat
-        },
-    }
+        }, }
 
     # ── Build PAYMENT-REQUIRED header (base64 JSON of v2 spec PaymentRequired) ──
-    payment_required_header_obj = {
-        "x402Version": 2,
-        "error": "PAYMENT-SIGNATURE header is required",
-        "resource": resource,
-        "accepts": accepts,
-        "extensions": {"bazaar": bazaar},
-    }
+    payment_required_header_obj = { "x402Version": 2,
+        "error": "PAYMENT-SIGNATURE header is required", "resource": resource,
+        "accepts": accepts, "extensions": {"bazaar": bazaar}, }
     payment_required_b64 = _base64.b64encode(
         json.dumps(payment_required_header_obj, separators=(",", ":")).encode()
     ).decode("ascii")
 
-    return JSONResponse(
-        status_code=402,
-        content=v2_body,
-        headers={
-            "PAYMENT-REQUIRED": payment_required_b64,
-            "X-Paywall-Version": "2",
-            "Content-Type": "application/json",
-            **SECURITY_HEADERS,
-        },
-    )
+    return JSONResponse( status_code=402, content=v2_body, headers={
+            "PAYMENT-REQUIRED": payment_required_b64, "X-Paywall-Version": "2",
+            "Content-Type": "application/json", **SECURITY_HEADERS, }, )
 
 
 # ── Payment header parser (supports v1 x-pay and v2 PAYMENT-SIGNATURE) ──
@@ -1318,8 +1232,7 @@ async def self_verify_evm_usdc(payload: dict, chain_key: str, chain_cfg: dict) -
 
     try:
         accepted = payload.get("accepted", {})
-        tx_hash = (
-            payload.get("txHash")
+        tx_hash = ( payload.get("txHash")
             or payload.get("signature")
             or accepted.get("transaction")
         )
@@ -1334,14 +1247,11 @@ async def self_verify_evm_usdc(payload: dict, chain_key: str, chain_cfg: dict) -
         if r:
             spent_key = f"x402:spent_tx:{tx_hash}"
             if r.get(spent_key):
-                return {
-                    "verified": False,
-                    "reason": f"Transaction {tx_hash[:16]}... already used",
-                }
+                return { "verified": False,
+                    "reason": f"Transaction {tx_hash[:16]}... already used", }
 
         # Resolve expected amount from tool pricing if not in payload
-        tool_id = (
-            accepted.get("extra", {}).get("tool")
+        tool_id = ( accepted.get("extra", {}).get("tool")
             or payload.get("tool")
             or accepted.get("resource", "").split("/")[-1]
             if accepted.get("resource")
@@ -1354,24 +1264,18 @@ async def self_verify_evm_usdc(payload: dict, chain_key: str, chain_cfg: dict) -
         # ── Blockscout API v2 (free, no API key needed) ──
         # Maps chain_id → Blockscout base URL
         chain_id = chain_cfg.get("chain_id")
-        blockscout_urls = {
-            1: "https://eth.blockscout.com",
+        blockscout_urls = { 1: "https://eth.blockscout.com",
             42161: "https://arbitrum.blockscout.com",
             10: "https://optimism.blockscout.com",
-            137: "https://polygon.blockscout.com",
-            8453: "https://base.blockscout.com",
+            137: "https://polygon.blockscout.com", 8453: "https://base.blockscout.com",
             100: "https://gnosis.blockscout.com",
             43114: "https://avalanche.blockscout.com",
-            250: "https://fantom.blockscout.com",
-            56: "https://bsc.blockscout.com",
-        }
+            250: "https://fantom.blockscout.com", 56: "https://bsc.blockscout.com", }
 
         blockscout_base = blockscout_urls.get(chain_id)
         if not blockscout_base:
-            return {
-                "verified": False,
-                "reason": f"No Blockscout URL for chain_id {chain_id}",
-            }
+            return { "verified": False,
+                "reason": f"No Blockscout URL for chain_id {chain_id}", }
 
         import httpx
 
@@ -1381,8 +1285,7 @@ async def self_verify_evm_usdc(payload: dict, chain_key: str, chain_cfg: dict) -
         async with httpx.AsyncClient(timeout=15) as client:
             resp = await client.get(tx_url)
             if resp.status_code != 200:
-                return {
-                    "verified": False,
+                return { "verified": False,
                     "reason": f"TX {tx_hash[:16]}... not found on {chain_key} (HTTP {resp.status_code})",
                 }
             tx_data = resp.json()
@@ -1390,8 +1293,7 @@ async def self_verify_evm_usdc(payload: dict, chain_key: str, chain_cfg: dict) -
         # Check transaction status
         tx_status = tx_data.get("status") or tx_data.get("result")
         if tx_status != "ok" and tx_status != "1":
-            return {
-                "verified": False,
+            return { "verified": False,
                 "reason": f"TX {tx_hash[:16]}... failed on-chain (status={tx_status})",
             }
 
@@ -1408,8 +1310,7 @@ async def self_verify_evm_usdc(payload: dict, chain_key: str, chain_cfg: dict) -
                 r2 = await client2.get(receipt_url)
                 if r2.status_code == 200:
                     receipt_data = r2.json()
-                    logs = receipt_data.get("result", {}).get(
-                        "logs", []
+                    logs = receipt_data.get("result", {}).get( "logs", []
                     ) or receipt_data.get("logs", [])
 
         transfer_found = False
@@ -1453,8 +1354,7 @@ async def self_verify_evm_usdc(payload: dict, chain_key: str, chain_cfg: dict) -
                 if actual_amount == expected_amount:
                     amount_match = True
                 else:
-                    logger.warning(
-                        f"Amount mismatch for {tx_hash[:16]}...: "
+                    logger.warning( f"Amount mismatch for {tx_hash[:16]}...: "
                         f"expected {expected_amount} atoms, got {actual_amount} atoms on {chain_key}"
                     )
             elif actual_amount:
@@ -1467,14 +1367,12 @@ async def self_verify_evm_usdc(payload: dict, chain_key: str, chain_cfg: dict) -
             break  # Found Transfer to our address
 
         if not transfer_found:
-            return {
-                "verified": False,
+            return { "verified": False,
                 "reason": f"No USDC Transfer to {our_address[:10]}... found in {tx_hash[:16]}...",
             }
 
         if not amount_match and expected_amount and actual_amount:
-            return {
-                "verified": False,
+            return { "verified": False,
                 "reason": f"Amount mismatch: expected {expected_amount} atoms, got {actual_amount} atoms",
             }
 
@@ -1482,13 +1380,9 @@ async def self_verify_evm_usdc(payload: dict, chain_key: str, chain_cfg: dict) -
         tool_name = tool_id or "unknown"
         if r:
             spent_key = f"x402:spent_tx:{tx_hash}"
-            payment_data = {
-                "chain": chain_key,
-                "payer": payer or "unknown",
-                "amount": actual_amount or amount_atoms or "0",
-                "tool": tool_name,
-                "timestamp": time.time(),
-            }
+            payment_data = { "chain": chain_key, "payer": payer or "unknown",
+                "amount": actual_amount or amount_atoms or "0", "tool": tool_name,
+                "timestamp": time.time(), }
             r.setex(spent_key, 86400, json.dumps(payment_data))
 
         # Persist to Supabase (non-blocking)
@@ -1497,31 +1391,20 @@ async def self_verify_evm_usdc(payload: dict, chain_key: str, chain_cfg: dict) -
 
             from app.routers.x402_dashboard import _persist_payment_to_supabase
 
-            asyncio.create_task(
-                _persist_payment_to_supabase(
-                    tool=tool_name,
+            asyncio.create_task( _persist_payment_to_supabase( tool=tool_name,
                     amount_atoms=str(actual_amount or amount_atoms or "0"),
-                    chain=chain_key,
-                    payer=payer or "unknown",
-                    tx_hash=tx_hash,
-                    status="fulfilled",
-                )
+                    chain=chain_key, payer=payer or "unknown", tx_hash=tx_hash,
+                    status="fulfilled", )
             )
         except Exception:
             pass
 
-        logger.info(
-            f"Verified USDC payment: {tx_hash[:16]}... on {chain_key} "
+        logger.info( f"Verified USDC payment: {tx_hash[:16]}... on {chain_key} "
             f"from {payer[:10] if payer else 'unknown'}... amount={actual_amount or 'unknown'} tool={tool_name}"
         )
-        return {
-            "verified": True,
-            "chain": chain_key,
-            "tx_hash": tx_hash,
-            "payer": payer,
-            "amount": actual_amount or amount_atoms,
-            "method": "blockscout-verify",
-        }
+        return { "verified": True, "chain": chain_key, "tx_hash": tx_hash,
+            "payer": payer, "amount": actual_amount or amount_atoms,
+            "method": "blockscout-verify", }
 
     except Exception as e:
         logger.error(f"Self-verify error: {e}")
@@ -1674,16 +1557,9 @@ def _build_discovery_response():
             asset = _resolve_asset(cfg)
             extra = _build_extra(cfg, tool_id, chain_key, pay_to, method)
 
-            req = {
-                "scheme": "exact",
-                "network": cfg["network"],
-                "asset": asset,
-                "amount": price_atoms,
-                "payTo": pay_to,
-                "maxTimeoutSeconds": 180,
-                "extra": extra,
-                "facilitators": cfg.get("facilitators", []),
-            }
+            req = { "scheme": "exact", "network": cfg["network"], "asset": asset,
+                "amount": price_atoms, "payTo": pay_to, "maxTimeoutSeconds": 180,
+                "extra": extra, "facilitators": cfg.get("facilitators", []), }
             if "tokens" in cfg:
                 req["supportedTokens"] = list(cfg["tokens"].keys())
             requirements.append(req)
@@ -1699,90 +1575,53 @@ def _build_discovery_response():
             desc = _TOOL_DESCRIPTIONS.get(
                 tool_id, f"{tool_id} — crypto intelligence tool"
             )
-        tools[tool_id] = {
-            "description": desc,
-            "price_usd": price_usd,
-            "category": category,
-            "trial_free": trial_free,
+        tools[tool_id] = { "description": desc, "price_usd": price_usd,
+            "category": category, "trial_free": trial_free,
             "trial_description": f"{trial_free} free calls before payment required",
-            "requirements": requirements,
-        }
+            "requirements": requirements, }
 
     # Build spec-compliant supportedNetworks array
     supported_networks = []
     for ck, cv in CHAIN_USDC.items():
-        net = {
-            "network": cv["network"],
-            "name": CHAIN_NAMES.get(ck, ck),
-            "chainId": cv.get("chain_id"),
-            "currency": cv.get("name", "USD Coin"),
-            "facilitators": cv.get("facilitators", []),
-        }
+        net = { "network": cv["network"], "name": CHAIN_NAMES.get(ck, ck),
+            "chainId": cv.get("chain_id"), "currency": cv.get("name", "USD Coin"),
+            "facilitators": cv.get("facilitators", []), }
         if "tokens" in cv:
             net["tokens"] = dict(cv["tokens"].items())
         supported_networks.append(net)
 
     # Build spec-compliant paymentFacilitators array
-    facilitator_map = {
-        "coinbase_cdp": {
-            "name": "Coinbase CDP",
+    facilitator_map = { "coinbase_cdp": { "name": "Coinbase CDP",
             "description": "Fee-free Base + Solana USDC via Coinbase Developer Platform",
-            "url": "https://cdp.coinbase.com",
-        },
-        "payai": {
-            "name": "PayAI",
+            "url": "https://cdp.coinbase.com", }, "payai": { "name": "PayAI",
             "description": "Base + Solana USDC, deferred settlement",
-            "url": "https://payai.network",
-        },
-        "primev": {
-            "name": "Primev",
+            "url": "https://payai.network", }, "primev": { "name": "Primev",
             "description": "Fee-free Ethereum via mev-commit preconfirmations",
-            "url": "https://primev.xyz",
-        },
-        "cloudflare_x402": {
+            "url": "https://primev.xyz", }, "cloudflare_x402": {
             "name": "Cloudflare x402",
             "description": "Base Sepolia + Ethereum fallback",
-            "url": "https://x402.org",
-        },
-        "eip7702": {
-            "name": "EIP-7702 Universal",
+            "url": "https://x402.org", }, "eip7702": { "name": "EIP-7702 Universal",
             "description": "Universal EVM — BSC, Polygon, Avalanche, Fantom, Gnosis, Arbitrum, Optimism, Base",
-            "url": "https://eips.ethereum.org/EIPS/eip-7702",
-        },
-        "tron_selfverify": {
+            "url": "https://eips.ethereum.org/EIPS/eip-7702", }, "tron_selfverify": {
             "name": "TRON Self-Verify",
             "description": "TRON USDT/USDC/USDD — self-verified via TronGrid (fee-free)",
-            "url": "https://trongrid.io",
-        },
-        "bitcoin_selfverify": {
+            "url": "https://trongrid.io", }, "bitcoin_selfverify": {
             "name": "Bitcoin Self-Verify",
             "description": "Bitcoin BTC — self-verified via Mempool.space (fee-free, 1-conf)",
-            "url": "https://mempool.space",
-        },
-        "asterpay": {
-            "name": "AsterPay",
-            "description": "EUR/SEPA European off-ramp",
-            "url": "https://asterpay.io",
-        },
-    }
+            "url": "https://mempool.space", }, "asterpay": { "name": "AsterPay",
+            "description": "EUR/SEPA European off-ramp", "url": "https://asterpay.io",
+        }, }
     payment_facilitators = []
     for fk, fv in facilitator_map.items():
         fac_networks = [
             n["network"] for n in supported_networks if fk in n.get("facilitators", [])
         ]
-        payment_facilitators.append(
-            {
-                "name": fv["name"],
-                "description": fv["description"],
-                "url": fv["url"],
-                "supportedNetworks": fac_networks,
-            }
+        payment_facilitators.append( { "name": fv["name"],
+                "description": fv["description"], "url": fv["url"],
+                "supportedNetworks": fac_networks, }
         )
 
-    return {
-        "x402": {
-            "version": "2",
-            "protocol": "x402",
+    return { "x402": { "version": "2", "protocol": "x402",
             "description": "Rug Munch Intelligence (RMI) — Multi-chain x402 payment system. Crypto scam detection, market analysis, and security intelligence via micropayments.",
             "trial_policy": "1 free trial per tool without wallet. Connect wallet for 3 free calls per standard tool, 1 per premium tool.",
             "refund_policy": "Full refund if tool returns no data. Request within 48h via POST /api/v1/x402/refund with tx hash.",
@@ -1795,19 +1634,14 @@ def _build_discovery_response():
                 "tron_selfverify": "TRON USDT/USDC/USDD — self-verified via TronGrid (fee-free)",
                 "bitcoin_selfverify": "Bitcoin BTC — self-verified via Mempool.space (fee-free, 1-conf)",
                 "asterpay": "EUR/SEPA European off-ramp",
-                "x402_rs": "Self-hosted x402-rs — multi-chain (requires Docker)",
-            },
-        },
+                "x402_rs": "Self-hosted x402-rs — multi-chain (requires Docker)", }, },
         "gateway_url": "https://mcp.rugmunch.io",
         "payment_endpoint": "https://mcp.rugmunch.io/api/v1/x402-tools",
         "supported_chains": list(CHAIN_USDC.keys()),
         "supportedNetworks": supported_networks,
-        "paymentFacilitators": payment_facilitators,
-        "chain_count": len(CHAIN_USDC),
-        "facilitator_count": len(payment_facilitators),
-        "total_tools": len(tools),
-        "tools": tools,
-    }
+        "paymentFacilitators": payment_facilitators, "chain_count": len(CHAIN_USDC),
+        "facilitator_count": len(payment_facilitators), "total_tools": len(tools),
+        "tools": tools, }
 
 
 def _resolve_pay_to(method: str) -> str:
@@ -1997,11 +1831,8 @@ async def get_pricing_suggestions():
     """
     r = get_redis()
     if not r:
-        return JSONResponse(
-            status_code=503,
-            content={"error": "Redis unavailable"},
-            headers=SECURITY_HEADERS,
-        )
+        return JSONResponse( status_code=503, content={"error": "Redis unavailable"},
+            headers=SECURITY_HEADERS, )
     try:
         suggestions = []
         for tool_id, pricing in TOOL_PRICES.items():
@@ -2037,46 +1868,31 @@ async def get_pricing_suggestions():
             elif revenue > 0 and avg_revenue_per_call < current_price * 0.5:
                 suggestion = "check_pricing_consistency"
 
-            suggestions.append(
-                {
-                    "tool_id": tool_id,
+            suggestions.append( { "tool_id": tool_id,
                     "current_price_usd": current_price,
-                    "suggested_price_usd": suggested_price,
-                    "suggestion": suggestion,
-                    "stats": {
-                        "paid_calls": paid_calls,
-                        "trial_calls": trial_calls,
+                    "suggested_price_usd": suggested_price, "suggestion": suggestion,
+                    "stats": { "paid_calls": paid_calls, "trial_calls": trial_calls,
                         "total_calls": total_calls,
                         "conversion_rate": round(conversion_rate * 100, 1),
                         "revenue_usd": round(revenue, 4),
-                        "avg_revenue_per_call": round(avg_revenue_per_call, 4),
-                    },
-                }
+                        "avg_revenue_per_call": round(avg_revenue_per_call, 4), }, }
             )
 
         # Sort: actionable suggestions first
-        suggestions.sort(
-            key=lambda s: (
+        suggestions.sort( key=lambda s: (
                 0 if s["suggestion"] and s["suggestion"] != "insufficient_data" else 1
             )
         )
 
-        return {
-            "suggestions": suggestions,
-            "total_tools": len(suggestions),
-            "actionable": sum(
-                1
+        return { "suggestions": suggestions, "total_tools": len(suggestions),
+            "actionable": sum( 1
                 for s in suggestions
                 if s["suggestion"] and s["suggestion"] != "insufficient_data"
-            ),
-        }
+            ), }
     except Exception as e:
         logger.error(f"Pricing suggestions error: {e}")
-        return JSONResponse(
-            status_code=500,
-            content={"error": str(e)[:100]},
-            headers=SECURITY_HEADERS,
-        )
+        return JSONResponse( status_code=500, content={"error": str(e)[:100]},
+            headers=SECURITY_HEADERS, )
 
 
 # ── Refund Request Endpoint ──

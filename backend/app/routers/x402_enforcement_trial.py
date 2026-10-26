@@ -99,8 +99,7 @@ async def databus_trial_result(
     )
 
 
-async def http_trial_result(
-    request: Request, tool_id: str, remaining: int
+async def http_trial_result( request: Request, tool_id: str, remaining: int
 ) -> Response | None:
     """GET-to-POST fallback for tools with no DataBus entry; None = not applicable.
 
@@ -114,29 +113,19 @@ async def http_trial_result(
     base_url = str(request.url).split("?")[0]
     try:
         async with httpx.AsyncClient(timeout=30) as client:
-            resp = await client.post(
-                base_url,
-                json=query_params,
-                headers={
+            resp = await client.post( base_url, json=query_params, headers={
                     "Content-Type": "application/json",
-                    "X-RMI-Internal": "trial-granted",
-                    "X-RMI-Trial": "true",
+                    "X-RMI-Internal": "trial-granted", "X-RMI-Trial": "true",
                     "X-RMI-Trial-Remaining": str(remaining),
-                    "X-Device-Id": request.headers.get("x-device-id", ""),
-                },
-            )
+                    "X-Device-Id": request.headers.get("x-device-id", ""), }, )
             if resp.status_code == 404:
                 return no_data_response(tool_id, remaining, NO_DATA_MESSAGE)
-            return Response(
-                content=resp.content,
-                status_code=resp.status_code,
+            return Response( content=resp.content, status_code=resp.status_code,
                 media_type=resp.headers.get("content-type", "application/json"),
-                headers={
-                    k: v
+                headers={ k: v
                     for k, v in resp.headers.items()
                     if k.lower() not in ("content-length", "transfer-encoding")
-                },
-            )
+                }, )
     except (httpx.HTTPError, TimeoutError, ValueError, KeyError, RuntimeError, OSError) as exc:
         # Upstream call failed — trial was consumed, report no data
         logger.warning("trial_http_fallback_failed", extra={"tool": tool_id, "error": str(exc)})
@@ -183,13 +172,7 @@ async def run_trial(
             "DataBus caching shield not available, falling back to call_next"
         )
         return await relay_trial(request, call_next, remaining)
-    except (
-        httpx.HTTPError,
-        TimeoutError,
-        ValueError,
-        KeyError,
-        RuntimeError,
-        OSError,
+    except ( httpx.HTTPError, TimeoutError, ValueError, KeyError, RuntimeError, OSError,
     ) as exc:
         logger.warning("trial_databus_failed", extra={"tool": tool_id, "error": str(exc)})
         # Trial consumed but execution failed — refund it
@@ -199,9 +182,7 @@ async def run_trial(
                 key = f"x402:trial:{client_id}:{tool_id}"
                 r.decr(key)  # Roll back the consumption
         except (TimeoutError, ValueError, KeyError, RuntimeError, OSError) as exc:
-            logger.warning(
-                "trial_rollback_failed",
-                extra={"tool": tool_id, "error": str(exc)},
-            )
+            logger.warning( "trial_rollback_failed",
+                extra={"tool": tool_id, "error": str(exc)}, )
         # Return 402 — trial refunded since we couldn't execute
         return build_402_response(tool_id, client_id=client_id)
