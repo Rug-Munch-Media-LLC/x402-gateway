@@ -23,14 +23,13 @@ import os
 from contextlib import suppress
 
 import redis as _redis_mod
-from fastapi import APIRouter, HTTPException, Request
-from pydantic import BaseModel, Field, field_validator
-
 from app.contract_upgrade_monitor import (
     format_upgrade_report,
     get_upgrade_analyzer,
     is_valid_evm_address,
 )
+from fastapi import APIRouter, HTTPException, Request
+from pydantic import BaseModel, Field, field_validator
 
 logger = logging.getLogger("x402_contract_upgrade_monitor")
 

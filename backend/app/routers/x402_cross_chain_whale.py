@@ -20,15 +20,14 @@ import logging
 import os
 from contextlib import suppress
 
-from fastapi import APIRouter, HTTPException, Request
-from pydantic import BaseModel, Field, field_validator
-
 from app.cross_chain_whale import (
     CrossChainWhaleTracker,
     format_whale_report,
     get_whale_tracker,
     is_valid_address,
 )
+from fastapi import APIRouter, HTTPException, Request
+from pydantic import BaseModel, Field, field_validator
 
 logger = logging.getLogger("x402_cross_chain_whale")
 

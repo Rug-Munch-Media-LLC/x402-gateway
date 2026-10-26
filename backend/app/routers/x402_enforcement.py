@@ -30,12 +30,11 @@ from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     import redis as _redis_types
-from fastapi import Request, Response
-from fastapi.responses import JSONResponse
-
 # ── Imports added 2026-06-25: fix missing deps referenced in middleware ──
 from app.core.redis import get_redis
 from app.routers.protection import get_client_id
+from fastapi import Request, Response
+from fastapi.responses import JSONResponse
 
 logger = logging.getLogger("x402_enforcement")
 
@@ -279,11 +278,24 @@ def _get_pay_to_address(chain: str) -> str:
         pass
     # Fallback: env vars
     if chain == "eth":
-        return os.getenv("X402_EVM_PAY_TO", "0x1E3AC01d0fdb976179790BDD02823196A92705C9")
+        return os.getenv(
+            "X402_EVM_PAY_TO", "0x1E3AC01d0fdb976179790BDD02823196A92705C9"
+        )
     if chain == "sol":
-        return os.getenv("X402_SOL_PAY_TO", "Gix4P9AmwcZRGzr2hCEME5m2QAvY86dBfm8c7e7MpFzv")
+        return os.getenv(
+            "X402_SOL_PAY_TO", "Gix4P9AmwcZRGzr2hCEME5m2QAvY86dBfm8c7e7MpFzv"
+        )
     # Try to find any EVM wallet for EVM chains
-    if chain in ("base", "polygon", "arbitrum", "optimism", "avalanche", "bsc", "fantom", "gnosis"):
+    if chain in (
+        "base",
+        "polygon",
+        "arbitrum",
+        "optimism",
+        "avalanche",
+        "bsc",
+        "fantom",
+        "gnosis",
+    ):
         return _get_pay_to_address("eth")
     return ""
 
@@ -325,12 +337,9 @@ def _load_tool_prices():
     # ─── 2. Enrich from gateway configs (adds chain-specific variants) ────────
     # Try multiple paths: Docker mount, host path, OpenClaw backup
     gateway_base = None
-    for candidate in [
-        "/app/x402-gateway",
-        "/root/backend/x402-gateway",
-        "/srv/rmi/backend/x402-gateway",
-        "/root/.openclaw/backend/x402-gateway",
-    ]:
+    from app.routers.x402_gateway_paths import gateway_base_candidates
+
+    for candidate in gateway_base_candidates():
         if os.path.isdir(candidate):
             gateway_base = candidate
             break
@@ -685,7 +694,9 @@ def _ensure_tool_prices():
         from app.routers.x402_databus_tools import X402_TOOL_PRICING as _DATABUS_PRICING
 
         TOOL_PRICES.update(_DATABUS_PRICING)
-        logger.info(f"x402 enforcement: loaded {len(_DATABUS_PRICING)} DataBus-powered tools")
+        logger.info(
+            f"x402 enforcement: loaded {len(_DATABUS_PRICING)} DataBus-powered tools"
+        )
     except Exception as e:
         logger.warning(f"x402 enforcement: could not load DataBus tools: {e}")
 
@@ -814,19 +825,10 @@ def _build_bazaar_extension(tool_id: str, pricing: dict, accepts: list) -> dict:
     - output.type: always "json"
     """
     # Map our categories to bazaar-standard categories
-    CATEGORY_MAP = {
-        "security": "security",
-        "intelligence": "intelligence",
-        "market": "market-data",
-        "analysis": "analytics",
-        "social": "social",
-        "launchpad": "launchpad",
-        "bundle": "bundles",
-        "defi": "defi",
-        "premium": "premium",
-        "api": "api",
-        "variant": "crypto",
-    }
+    CATEGORY_MAP = { "security": "security", "intelligence": "intelligence",
+        "market": "market-data", "analysis": "analytics", "social": "social",
+        "launchpad": "launchpad", "bundle": "bundles", "defi": "defi",
+        "premium": "premium", "api": "api", "variant": "crypto", }
     category = pricing.get("category", "analysis")
     bazaar_category = CATEGORY_MAP.get(category, category)
 
@@ -840,88 +842,50 @@ def _build_bazaar_extension(tool_id: str, pricing: dict, accepts: list) -> dict:
     first_accept.get("extra", {})
 
     # Build inputSchema matching the bazaar spec's info structure
-    info_input: dict[str, Any] = {
-        "type": "http",
-        "method": http_method,
-    }
+    info_input: dict[str, Any] = { "type": "http", "method": http_method, }
 
     if http_method == "GET":
         # Query params for GET: address and optional chain
-        info_input["queryParams"] = {
-            "address": {
-                "type": "string",
-                "description": f"Blockchain address or identifier for {tool_id}",
-            },
-            "chain": {"type": "string", "description": "Blockchain to query (default: base)"},
-        }
+        info_input["queryParams"] = { "address": { "type": "string",
+                "description": f"Blockchain address or identifier for {tool_id}", },
+            "chain": { "type": "string",
+                "description": "Blockchain to query (default: base)", }, }
     else:
         # Body params for POST: address and chain
         info_input["bodyType"] = "json"
-        info_input["body"] = {
-            "address": {
-                "type": "string",
-                "description": f"Blockchain address or identifier for {tool_id}",
-            },
-            "chain": {"type": "string", "description": "Blockchain to query (default: base)"},
-        }
+        info_input["body"] = { "address": { "type": "string",
+                "description": f"Blockchain address or identifier for {tool_id}", },
+            "chain": { "type": "string",
+                "description": "Blockchain to query (default: base)", }, }
 
-    info = {
-        "input": info_input,
-        "output": {
-            "type": "json",
-            "example": {
+    info = { "input": info_input, "output": { "type": "json", "example": {
                 "data": {"result": "tool output"},
-                "sources_used": ["source1", "source2"],
-            },
-        },
+                "sources_used": ["source1", "source2"], }, },
         "category": bazaar_category,
         "tags": ["crypto", "security", "blockchain", tool_id],
-        "description": pricing.get("description", f"{tool_id} — Rug Munch Intelligence"),
-    }
+        "description": pricing.get( "description", f"{tool_id} — Rug Munch Intelligence"
+        ), }
 
     # Schema that validates the info structure per bazaar spec
-    schema = {
-        "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "type": "object",
-        "properties": {
-            "input": {
-                "type": "object",
-                "properties": {
-                    "type": {"type": "string", "const": "http"},
-                    "method": {
-                        "type": "string",
-                        "enum": ["GET", "HEAD", "DELETE"]
+    schema = { "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object", "properties": { "input": { "type": "object", "properties": {
+                    "type": {"type": "string", "const": "http"}, "method": {
+                        "type": "string", "enum": ["GET", "HEAD", "DELETE"]
                         if http_method == "GET"
-                        else ["POST", "PUT", "PATCH"],
-                    },
+                        else ["POST", "PUT", "PATCH"], },
                     "queryParams": {"type": "object"}
                     if http_method == "GET"
-                    else {"type": "object"},
-                    "bodyType": {"type": "string", "enum": ["json", "form-data", "text"]},
-                    "body": {"type": "object"},
-                },
-                "required": ["type", "method"],
-                "additionalProperties": False,
-            },
-            "output": {
-                "type": "object",
-                "properties": {
-                    "type": {"type": "string"},
-                    "example": {"type": "object"},
-                },
-                "required": ["type"],
-            },
+                    else {"type": "object"}, "bodyType": { "type": "string",
+                        "enum": ["json", "form-data", "text"], },
+                    "body": {"type": "object"}, }, "required": ["type", "method"],
+                "additionalProperties": False, }, "output": { "type": "object",
+                "properties": { "type": {"type": "string"},
+                    "example": {"type": "object"}, }, "required": ["type"], },
             "category": {"type": "string"},
             "tags": {"type": "array", "items": {"type": "string"}},
-            "description": {"type": "string"},
-        },
-        "required": ["input"],
-    }
+            "description": {"type": "string"}, }, "required": ["input"], }
 
-    return {
-        "info": info,
-        "schema": schema,
-    }
+    return { "info": info, "schema": schema, }
 
 
 def _build_resource_info(tool_id: str, pricing: dict) -> dict:
@@ -967,7 +931,9 @@ def build_402_response(tool_id: str, client_id: str = "") -> JSONResponse:
     """
     # Ensure pay-to addresses are loaded before building 402 response (added 2026-06-25)
     _ensure_pay_addresses()
-    pricing = TOOL_PRICES.get(tool_id, {"price_usd": 0.01, "price_atoms": "10000", "trial_free": 3})
+    pricing = TOOL_PRICES.get(
+        tool_id, {"price_usd": 0.01, "price_atoms": "10000", "trial_free": 3}
+    )
     trial_free = pricing.get("trial_free", 3)
 
     # Check actual remaining trials for this client
@@ -985,65 +951,37 @@ def build_402_response(tool_id: str, client_id: str = "") -> JSONResponse:
     bazaar = _build_bazaar_extension(tool_id, pricing, accepts)
 
     # ── V2 spec body format (what official SDKs parse) ──
-    v2_body = {
-        "x402Version": 2,
-        "error": "PAYMENT-SIGNATURE header is required",
-        "resource": resource,
-        "accepts": accepts,
-        "extensions": {
-            "bazaar": bazaar,
-        },
+    v2_body = { "x402Version": 2, "error": "PAYMENT-SIGNATURE header is required",
+        "resource": resource, "accepts": accepts, "extensions": { "bazaar": bazaar, },
         # ── Legacy compat fields (not in spec but needed for our gateway clients) ──
-        "error_legacy": "Payment Required",
-        "tool": tool_id,
-        "price": f"${pricing['price_usd']:.2f}",
-        "trial_free": trial_free,
-        "trial_remaining": remaining,
-        "trial_used": remaining <= 0,
-        "wallet_required": remaining == -1,
-        "message": (
+        "error_legacy": "Payment Required", "tool": tool_id,
+        "price": f"${pricing['price_usd']:.2f}", "trial_free": trial_free,
+        "trial_remaining": remaining, "trial_used": remaining <= 0,
+        "wallet_required": remaining == -1, "message": (
             f"Connect a wallet to continue. Your 1 free trial is used — link MetaMask or Phantom to get {trial_free} free calls per tool. From ${pricing['price_usd']:.2f}/call after that."
             if remaining == -1
             else f"All {trial_free} free trial{'s' if trial_free != 1 else ''} used. Pay {pricing['price_atoms']} atoms to use {tool_id}. Pay on {', '.join(CHAIN_NAMES.get(c, c) for c in CHAIN_USDC)}."
-        ),
-        "accepted_chains": list(CHAIN_USDC.keys()),
-        "chain_details": {
-            k: {
-                "network": v["network"],
-                "facilitators": v.get("facilitators", []),
-                "tokens": list(v.get("tokens", {"USDC": v.get("usdc", "")}).keys()),
-            }
+        ), "accepted_chains": list(CHAIN_USDC.keys()), "chain_details": { k: {
+                "network": v["network"], "facilitators": v.get("facilitators", []),
+                "tokens": list(v.get("tokens", {"USDC": v.get("usdc", "")}).keys()), }
             for k, v in CHAIN_USDC.items()
         },
         # ── Legacy compat: nested requirements for our Cloudflare workers ──
-        "x402": {
-            "version": "2",
+        "x402": { "version": "2",
             "requirements": accepts,  # Same array, different field name for backward compat
-        },
-    }
+        }, }
 
     # ── Build PAYMENT-REQUIRED header (base64 JSON of v2 spec PaymentRequired) ──
-    payment_required_header_obj = {
-        "x402Version": 2,
-        "error": "PAYMENT-SIGNATURE header is required",
-        "resource": resource,
-        "accepts": accepts,
-        "extensions": {"bazaar": bazaar},
-    }
+    payment_required_header_obj = { "x402Version": 2,
+        "error": "PAYMENT-SIGNATURE header is required", "resource": resource,
+        "accepts": accepts, "extensions": {"bazaar": bazaar}, }
     payment_required_b64 = _base64.b64encode(
         json.dumps(payment_required_header_obj, separators=(",", ":")).encode()
     ).decode("ascii")
 
-    return JSONResponse(
-        status_code=402,
-        content=v2_body,
-        headers={
-            "PAYMENT-REQUIRED": payment_required_b64,
-            "X-Paywall-Version": "2",
-            "Content-Type": "application/json",
-            **SECURITY_HEADERS,
-        },
-    )
+    return JSONResponse( status_code=402, content=v2_body, headers={
+            "PAYMENT-REQUIRED": payment_required_b64, "X-Paywall-Version": "2",
+            "Content-Type": "application/json", **SECURITY_HEADERS, }, )
 
 
 # ── Payment header parser (supports v1 x-pay and v2 PAYMENT-SIGNATURE) ──
@@ -1269,7 +1207,9 @@ async def verify_payment(payload: dict) -> dict:
             break
 
     if chain_cfg and chain_cfg.get("verify") == "self":
-        return await self_verify_evm_usdc(payload, chain_cfg.get("name", "").lower(), chain_cfg)
+        return await self_verify_evm_usdc(
+            payload, chain_cfg.get("name", "").lower(), chain_cfg
+        )
 
     return {"verified": False, "reason": f"Verification failed for network: {network}"}
 
@@ -1286,11 +1226,16 @@ async def self_verify_evm_usdc(payload: dict, chain_key: str, chain_cfg: dict) -
     5. Mark the tx as spent in Redis with 86400s TTL (prevent double-use, 24h window)
     """
     # ERC-20 Transfer event signature: keccak256("Transfer(address,address,uint256)")
-    TRANSFER_EVENT_TOPIC0 = "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"
+    TRANSFER_EVENT_TOPIC0 = (
+        "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"
+    )
 
     try:
         accepted = payload.get("accepted", {})
-        tx_hash = payload.get("txHash") or payload.get("signature") or accepted.get("transaction")
+        tx_hash = ( payload.get("txHash")
+            or payload.get("signature")
+            or accepted.get("transaction")
+        )
         payer = payload.get("payer") or payload.get("from") or accepted.get("payer")
         amount_atoms = accepted.get("amount") or payload.get("amount")
 
@@ -1302,11 +1247,11 @@ async def self_verify_evm_usdc(payload: dict, chain_key: str, chain_cfg: dict) -
         if r:
             spent_key = f"x402:spent_tx:{tx_hash}"
             if r.get(spent_key):
-                return {"verified": False, "reason": f"Transaction {tx_hash[:16]}... already used"}
+                return { "verified": False,
+                    "reason": f"Transaction {tx_hash[:16]}... already used", }
 
         # Resolve expected amount from tool pricing if not in payload
-        tool_id = (
-            accepted.get("extra", {}).get("tool")
+        tool_id = ( accepted.get("extra", {}).get("tool")
             or payload.get("tool")
             or accepted.get("resource", "").split("/")[-1]
             if accepted.get("resource")
@@ -1319,21 +1264,18 @@ async def self_verify_evm_usdc(payload: dict, chain_key: str, chain_cfg: dict) -
         # ── Blockscout API v2 (free, no API key needed) ──
         # Maps chain_id → Blockscout base URL
         chain_id = chain_cfg.get("chain_id")
-        blockscout_urls = {
-            1: "https://eth.blockscout.com",
+        blockscout_urls = { 1: "https://eth.blockscout.com",
             42161: "https://arbitrum.blockscout.com",
             10: "https://optimism.blockscout.com",
-            137: "https://polygon.blockscout.com",
-            8453: "https://base.blockscout.com",
+            137: "https://polygon.blockscout.com", 8453: "https://base.blockscout.com",
             100: "https://gnosis.blockscout.com",
             43114: "https://avalanche.blockscout.com",
-            250: "https://fantom.blockscout.com",
-            56: "https://bsc.blockscout.com",
-        }
+            250: "https://fantom.blockscout.com", 56: "https://bsc.blockscout.com", }
 
         blockscout_base = blockscout_urls.get(chain_id)
         if not blockscout_base:
-            return {"verified": False, "reason": f"No Blockscout URL for chain_id {chain_id}"}
+            return { "verified": False,
+                "reason": f"No Blockscout URL for chain_id {chain_id}", }
 
         import httpx
 
@@ -1343,8 +1285,7 @@ async def self_verify_evm_usdc(payload: dict, chain_key: str, chain_cfg: dict) -
         async with httpx.AsyncClient(timeout=15) as client:
             resp = await client.get(tx_url)
             if resp.status_code != 200:
-                return {
-                    "verified": False,
+                return { "verified": False,
                     "reason": f"TX {tx_hash[:16]}... not found on {chain_key} (HTTP {resp.status_code})",
                 }
             tx_data = resp.json()
@@ -1352,8 +1293,7 @@ async def self_verify_evm_usdc(payload: dict, chain_key: str, chain_cfg: dict) -
         # Check transaction status
         tx_status = tx_data.get("status") or tx_data.get("result")
         if tx_status != "ok" and tx_status != "1":
-            return {
-                "verified": False,
+            return { "verified": False,
                 "reason": f"TX {tx_hash[:16]}... failed on-chain (status={tx_status})",
             }
 
@@ -1370,9 +1310,8 @@ async def self_verify_evm_usdc(payload: dict, chain_key: str, chain_cfg: dict) -
                 r2 = await client2.get(receipt_url)
                 if r2.status_code == 200:
                     receipt_data = r2.json()
-                    logs = receipt_data.get("result", {}).get("logs", []) or receipt_data.get(
-                        "logs", []
-                    )
+                    logs = receipt_data.get("result", {}).get( "logs", []
+                    ) or receipt_data.get("logs", [])
 
         transfer_found = False
         amount_match = False
@@ -1415,8 +1354,7 @@ async def self_verify_evm_usdc(payload: dict, chain_key: str, chain_cfg: dict) -
                 if actual_amount == expected_amount:
                     amount_match = True
                 else:
-                    logger.warning(
-                        f"Amount mismatch for {tx_hash[:16]}...: "
+                    logger.warning( f"Amount mismatch for {tx_hash[:16]}...: "
                         f"expected {expected_amount} atoms, got {actual_amount} atoms on {chain_key}"
                     )
             elif actual_amount:
@@ -1429,14 +1367,12 @@ async def self_verify_evm_usdc(payload: dict, chain_key: str, chain_cfg: dict) -
             break  # Found Transfer to our address
 
         if not transfer_found:
-            return {
-                "verified": False,
+            return { "verified": False,
                 "reason": f"No USDC Transfer to {our_address[:10]}... found in {tx_hash[:16]}...",
             }
 
         if not amount_match and expected_amount and actual_amount:
-            return {
-                "verified": False,
+            return { "verified": False,
                 "reason": f"Amount mismatch: expected {expected_amount} atoms, got {actual_amount} atoms",
             }
 
@@ -1444,13 +1380,9 @@ async def self_verify_evm_usdc(payload: dict, chain_key: str, chain_cfg: dict) -
         tool_name = tool_id or "unknown"
         if r:
             spent_key = f"x402:spent_tx:{tx_hash}"
-            payment_data = {
-                "chain": chain_key,
-                "payer": payer or "unknown",
-                "amount": actual_amount or amount_atoms or "0",
-                "tool": tool_name,
-                "timestamp": time.time(),
-            }
+            payment_data = { "chain": chain_key, "payer": payer or "unknown",
+                "amount": actual_amount or amount_atoms or "0", "tool": tool_name,
+                "timestamp": time.time(), }
             r.setex(spent_key, 86400, json.dumps(payment_data))
 
         # Persist to Supabase (non-blocking)
@@ -1459,31 +1391,20 @@ async def self_verify_evm_usdc(payload: dict, chain_key: str, chain_cfg: dict) -
 
             from app.routers.x402_dashboard import _persist_payment_to_supabase
 
-            asyncio.create_task(
-                _persist_payment_to_supabase(
-                    tool=tool_name,
+            asyncio.create_task( _persist_payment_to_supabase( tool=tool_name,
                     amount_atoms=str(actual_amount or amount_atoms or "0"),
-                    chain=chain_key,
-                    payer=payer or "unknown",
-                    tx_hash=tx_hash,
-                    status="fulfilled",
-                )
+                    chain=chain_key, payer=payer or "unknown", tx_hash=tx_hash,
+                    status="fulfilled", )
             )
         except Exception:
             pass
 
-        logger.info(
-            f"Verified USDC payment: {tx_hash[:16]}... on {chain_key} "
+        logger.info( f"Verified USDC payment: {tx_hash[:16]}... on {chain_key} "
             f"from {payer[:10] if payer else 'unknown'}... amount={actual_amount or 'unknown'} tool={tool_name}"
         )
-        return {
-            "verified": True,
-            "chain": chain_key,
-            "tx_hash": tx_hash,
-            "payer": payer,
-            "amount": actual_amount or amount_atoms,
-            "method": "blockscout-verify",
-        }
+        return { "verified": True, "chain": chain_key, "tx_hash": tx_hash,
+            "payer": payer, "amount": actual_amount or amount_atoms,
+            "method": "blockscout-verify", }
 
     except Exception as e:
         logger.error(f"Self-verify error: {e}")
@@ -1521,7 +1442,9 @@ def _record_refundable_payment(
     }
     try:
         r.setex(refund_key, 7 * 86400, json.dumps(refund_data))  # 7-day TTL
-        logger.info(f"Recorded refundable payment: {tx_hash[:16]}... tool={tool} reason={reason}")
+        logger.info(
+            f"Recorded refundable payment: {tx_hash[:16]}... tool={tool} reason={reason}"
+        )
     except Exception as e:
         logger.error(f"Failed to record refund for {tx_hash}: {e}")
 
@@ -1535,122 +1458,50 @@ async def x402_enforcement_middleware(request: Request, call_next) -> Response:
     x402 payment enforcement with Chain of Responsibility pattern.
     Delegates early-exit checks (free paths, bot detection) to the
     enforcement chain, then handles payment/trial/DataBus routing.
+
+    Each step lives in a sibling module: x402_enforcement_steps (chain, trial
+    bypass, developer key, burst), x402_enforcement_payment (header parsing,
+    verification, settlement headers), x402_enforcement_trial (consumption,
+    DataBus execution, fallbacks).
     """
+    from app.routers.enforcement_chain import SECURITY_HEADERS
+    from app.routers.x402_enforcement_payment import paid_request_response
+    from app.routers.x402_enforcement_steps import (
+        check_burst,
+        handle_developer_key,
+        relay_trial_headers,
+        run_enforcement_chain,
+    )
+    from app.routers.x402_enforcement_trial import (
+        consume_trial,
+        run_trial,
+        trial_verdict,
+    )
+
     path = request.url.path
 
     # Only intercept x402-tools
     if not path.startswith("/api/v1/x402-tools/"):
         return await call_next(request)
 
-    # ── Chain of Responsibility ──────────────────────────────────
-    # Early-exit checks: free paths, bot detection
-    try:
-        from app.routers.enforcement_chain import (
-            SECURITY_HEADERS as CHAIN_SECURITY_HEADERS,
-            BotDetector,
-            EnforcementChain,
-            EnforcementContext,
-            FreeEndpointRouter,
-        )
-
-        chain = EnforcementChain().add(FreeEndpointRouter()).add(BotDetector())
-
-        ctx = EnforcementContext(request)
-        ctx.path = path
-        ctx.method = request.method
-        ctx.user_agent = (request.headers.get("User-Agent", "") or "").lower()
-
-        for step in chain._steps:
-            result = await step.process(request, ctx)
-            if result is not None:
-                return result
-
-    except ImportError:
-        pass  # Chain module not available
-    except Exception as e:
-        logger.error(f"enforcement_chain_error: {e}")
+    early = await run_enforcement_chain(request, path)
+    if early is not None:
+        return early
 
     # ── Internal bypass: trial GET-to-POST re-dispatch ──────────────
     if request.headers.get("X-RMI-Internal") == "trial-granted":
-        response = await call_next(request)
-        response.headers["X-RMI-Trial"] = "true"
-        remaining_hdr = request.headers.get("X-RMI-Trial-Remaining", "0")
-        response.headers["X-RMI-Trial-Remaining"] = remaining_hdr
-        for k, v in SECURITY_HEADERS.items():
-            if k not in response.headers:
-                response.headers[k] = v
-        return response
+        return await relay_trial_headers(request, call_next)
 
-    # ── Developer API Key Check ─────────────────────────────────
-    try:
-        from app.routers.developer_tier import check_developer_key
+    developer = await handle_developer_key(request, call_next)
+    if developer is not None:
+        return developer
 
-        dev_result = await check_developer_key(request)
-        if dev_result is not None:
-            if dev_result.get("deny"):
-                status_code = dev_result.get("status_code", 429)
-                return JSONResponse(
-                    status_code=status_code,
-                    content={
-                        "error": dev_result.get("error", "rate_limit_exceeded"),
-                        "tier": dev_result.get("tier", "free"),
-                        "message": dev_result.get("error", "Rate limit exceeded"),
-                        "daily_limit": dev_result.get("daily_limit"),
-                        "calls_today": dev_result.get("calls_today"),
-                        "upgrade_url": "https://rugmunch.io/mcp-docs#pricing",
-                    },
-                    headers={
-                        **SECURITY_HEADERS,
-                        "X-RMI-Tier": dev_result.get("tier", "free"),
-                        "X-RMI-Remaining": str(dev_result.get("remaining_today", 0)),
-                        "Retry-After": str(dev_result.get("retry_after", 60)),
-                    },
-                )
-            request.state.developer_key = True
-            request.state.developer_tier = dev_result.get("tier", "free")
-            request.state.developer_email = dev_result.get("email", "")
-            response = await call_next(request)
-            response.headers["X-RMI-Tier"] = dev_result.get("tier", "free")
-            response.headers["X-RMI-Remaining"] = str(dev_result.get("remaining_today", 0))
-            return response
-    except ImportError:
-        pass
-    except Exception as e:
-        logger.warning(f"Developer key check failed: {e}")
-
-    # ── Burst protection: rate limit rapid requests ───────────────
     client_id = get_client_id(request)
-    # Extract tool name early for burst tracking
-    path_tool_id = path.rstrip("/").split("/")[-1] if path.count("/") >= 4 else "unknown"
-    r = get_redis()
-    if r and re.match(r"^[a-zA-Z0-9_]+$", path_tool_id):
-        burst_key = f"x402:burst:{client_id}:{path_tool_id}"
-        try:
-            burst_count = int(r.get(burst_key) or 0)
-            BURST_LIMIT = int(os.getenv("X402_BURST_LIMIT", "5"))
-            BURST_WINDOW = int(os.getenv("X402_BURST_WINDOW", "60"))
-            if burst_count >= BURST_LIMIT:
-                logger.warning(
-                    f"Burst limit: {client_id} hit {burst_count} requests in {BURST_WINDOW}s"
-                )
-                return JSONResponse(
-                    status_code=429,
-                    content={
-                        "error": f"Rate limited. Max {BURST_LIMIT} requests per {BURST_WINDOW}s per tool.",
-                        "retry_after": BURST_WINDOW,
-                    },
-                    headers={**SECURITY_HEADERS, "Retry-After": str(BURST_WINDOW)},
-                )
-            pipe = r.pipeline()
-            pipe.incr(burst_key)
-            if burst_count == 0:
-                pipe.expire(burst_key, BURST_WINDOW)
-            pipe.execute()
-        except Exception:
-            pass  # Don't block on burst tracking errors
+    limited = check_burst(request, path, client_id)
+    if limited is not None:
+        return limited
 
     # Free paths already checked above — flow continues to paid tool enforcement
-    # Extract tool name
     tool_id = path.rstrip("/").split("/")[-1]
 
     # Input validation: reject tool IDs with suspicious characters
@@ -1661,319 +1512,16 @@ async def x402_enforcement_middleware(request: Request, call_next) -> Response:
             headers=SECURITY_HEADERS,
         )
 
-    client_id = get_client_id(request)
-
-    # ── Payment header parsing: support both v1 (x-pay) and v2 (PAYMENT-SIGNATURE) ──
-    # v2 specifies PAYMENT-SIGNATURE header (base64 JSON), v1 uses X-Pay or x-pay
-    pay_sig = request.headers.get("PAYMENT-SIGNATURE", "") or request.headers.get(
-        "Payment-Signature", ""
-    )
-    x_pay = request.headers.get("x-pay", "") or request.headers.get("X-Pay", "")
-
-    # Reject oversized payment headers (DoS protection)
-    if pay_sig and len(pay_sig) > 16384:
-        return JSONResponse(
-            status_code=400,
-            content={"error": "Payment header too large"},
-            headers=SECURITY_HEADERS,
-        )
-    if x_pay and len(x_pay) > 8192:
-        return JSONResponse(
-            status_code=400,
-            content={"error": "Payment header too large"},
-            headers=SECURITY_HEADERS,
-        )
-
-    # Parse payment payload from whichever header is present
-    # v2 PAYMENT-SIGNATURE takes priority over v1 x-pay
-    payload = None
-    if pay_sig:
-        payload = parse_x_pay_header(pay_sig)  # parse_x_pay handles base64 too
-        if payload:
-            # v2 spec: payload should have top-level x402Version, accepted, payload, resource
-            # Normalize: make sure "accepted" is available at top level for our verifier
-            if "accepted" not in payload and "payload" in payload:
-                # This is a v2 PaymentPayload format — extract payment info
-                pass  # The verify_payment_via_router already handles this format
-    elif x_pay:
-        payload = parse_x_pay_header(x_pay)
-
-        if payload:
-            # Validate payment payload structure
-            if not isinstance(payload, dict):
-                return JSONResponse(
-                    status_code=400,
-                    content={"error": "Invalid payment payload structure"},
-                    headers=SECURITY_HEADERS,
-                )
-            accepted = payload.get("accepted", {})
-            if not isinstance(accepted, dict):
-                return JSONResponse(
-                    status_code=400,
-                    content={"error": "Invalid accepted payment structure"},
-                    headers=SECURITY_HEADERS,
-                )
-            result = await verify_payment_via_router(payload)
-            if result.get("verified"):
-                # Payment OK — attach info and proceed
-                request.state.x402_verified = True
-                request.state.x402_payer = result.get("payer", "")
-                request.state.x402_chain = result.get("chain", "")
-                request.state.x402_tx_hash = result.get("tx_hash", "")
-                request.state.x402_amount = result.get("amount", "")
-                request.state.x402_method = result.get("method", "")
-
-                # Track facilitator payment success for health monitoring
-                facilitator = result.get("method", result.get("facilitator", ""))
-                if facilitator:
-                    try:
-                        from app.routers.facilitator_health import record_payment_success
-
-                        record_payment_success(facilitator, True)
-                    except Exception:
-                        pass
-
-                response = await call_next(request)
-                response.headers["X-RMI-Payment"] = "verified"
-
-                # ── x402 v2: PAYMENT-RESPONSE header (base64 SettlementResponse) ──
-                # The v2 spec requires a PAYMENT-RESPONSE header on 200 responses
-                # after successful settlement, containing base64 JSON:
-                # {success: true, transaction: "0x...", network: "eip155:8453", payer: "0x..."}
-                settlement_response = {
-                    "success": True,
-                    "transaction": result.get("tx_hash", ""),
-                    "network": CHAIN_USDC.get(result.get("chain", ""), {}).get(
-                        "network", result.get("chain", "")
-                    ),
-                    "payer": result.get("payer", ""),
-                }
-                if result.get("amount"):
-                    settlement_response["amount"] = result.get("amount")
-                try:
-                    payment_response_b64 = _base64.b64encode(
-                        json.dumps(settlement_response, separators=(",", ":")).encode()
-                    ).decode("ascii")
-                    response.headers["PAYMENT-RESPONSE"] = payment_response_b64
-                except Exception:
-                    pass  # Don't fail on settlement header encoding errors
-
-                # Add security headers to successful responses too
-                for k, v in SECURITY_HEADERS.items():
-                    if k not in response.headers:
-                        response.headers[k] = v
-
-                # ── Lightweight refund check (no body reading) ──
-                # Body-parsing for empty data detection was removed because it:
-                #   a) Breaks streaming responses
-                #   b) Reads entire response into memory
-                #   c) Duplicates logic that belongs in tool handlers
-                # Instead: flag HTTP errors for refund. Empty-data detection
-                # is handled by tool handlers setting X-RMI-Result header.
-                if response.status_code >= 400:
-                    _record_refundable_payment(
-                        tx_hash=request.state.x402_tx_hash or "unknown",
-                        chain=request.state.x402_chain,
-                        payer=request.state.x402_payer,
-                        amount=request.state.x402_amount,
-                        tool=tool_id,
-                        reason=f"HTTP {response.status_code} error response",
-                    )
-                    response.headers["X-RMI-Refund-Flagged"] = "true"
-                    logger.info(
-                        f"Flagged payment for refund: tx={request.state.x402_tx_hash} "
-                        f"tool={tool_id} reason=HTTP_{response.status_code}"
-                    )
-
-                return response
-
-            # Payment verification failed — track failure for health monitoring
-            facilitator = result.get("method", result.get("facilitator", ""))
-            if facilitator:
-                try:
-                    from app.routers.facilitator_health import record_payment_success
-
-                    record_payment_success(facilitator, False)
-                except Exception:
-                    pass
+    # ── Payment header parsing + verification ──
+    paid = await paid_request_response(request, call_next, tool_id)
+    if paid is not None:
+        return paid
 
     # No valid payment — check free trials
-    try:
-        can_trial, remaining = check_trial(tool_id, client_id, consume=False)
-    except Exception as e:
-        logger.error(f"Trial check failed for {tool_id}: {e}")
-        can_trial, remaining = False, 0
-
+    can_trial, remaining = trial_verdict(tool_id, client_id)
     if can_trial:
-        # ── Consume the trial now (atomic INCR in Redis) ──
-        # The pre-check above used consume=False; now we actually consume it
-        try:
-            _, remaining_after = check_trial(tool_id, client_id, consume=True)
-            remaining = remaining_after
-        except Exception as e:
-            logger.error(f"Trial consumption failed for {tool_id}/{client_id}: {e}")
-
-        # Allow free trial execution
-        # ── Execute the tool directly via DataBus caching shield ──
-        # This eliminates the fragile httpx GET-to-POST roundtrip.
-        # All 127 tools are available through the DataBus — no need for
-        # internal HTTP bouncing through POST-only route handlers.
-        try:
-            from app.caching_shield.tool_data import td
-
-            # Build params from request (query params for GET, JSON body for POST)
-            params = {}
-            if request.method == "GET" and request.query_params:
-                params = dict(request.query_params)
-            elif request.method == "POST":
-                try:
-                    params = await request.json()
-                except Exception:
-                    params = {}
-
-            result = await td.call_tool(tool_id, params)
-
-            if result is not None:
-                # Trial execution succeeded — return the result
-                # Use raw Response (not JSONResponse) to avoid BaseHTTPMiddleware
-                # body_iterator consumption bug when returning from middleware directly.
-                response_body = json.dumps(result, default=str)
-                response = Response(
-                    content=response_body,
-                    status_code=200,
-                    media_type="application/json",
-                    headers={
-                        "X-RMI-Trial": "true",
-                        "X-RMI-Trial-Remaining": str(remaining),
-                        **SECURITY_HEADERS,
-                    },
-                )
-                return response
-            else:
-                # DataBus returned None — tool not available via DataBus.
-                # For GET requests: try httpx GET-to-POST conversion.
-                # For POST requests: fall through to original route handler.
-                if request.method == "GET" and request.query_params:
-                    import httpx
-
-                    query_params = dict(request.query_params)
-                    base_url = str(request.url).split("?")[0]
-                    try:
-                        async with httpx.AsyncClient(timeout=30) as client:
-                            resp = await client.post(
-                                base_url,
-                                json=query_params,
-                                headers={
-                                    "Content-Type": "application/json",
-                                    "X-RMI-Internal": "trial-granted",
-                                    "X-RMI-Trial": "true",
-                                    "X-RMI-Trial-Remaining": str(remaining),
-                                    "X-Device-Id": request.headers.get("x-device-id", ""),
-                                },
-                            )
-                            if resp.status_code == 404:
-                                # Tool has no POST route handler (DataBus-only tool that failed).
-                                # Trial was consumed — return 200 with "no data" result.
-                                # The client got their free call, data just wasn't available.
-                                return Response(
-                                    content=json.dumps(
-                                        {
-                                            "tool": tool_id,
-                                            "result": "no_data_available",
-                                            "trial": True,
-                                            "trial_remaining": remaining,
-                                            "message": "Free trial used. Data not available for this address — try a real token address.",
-                                        }
-                                    ),
-                                    status_code=200,
-                                    media_type="application/json",
-                                    headers={
-                                        "X-RMI-Trial": "true",
-                                        "X-RMI-Trial-Remaining": str(remaining),
-                                        **SECURITY_HEADERS,
-                                    },
-                                )
-                            response = Response(
-                                content=resp.content,
-                                status_code=resp.status_code,
-                                media_type=resp.headers.get("content-type", "application/json"),
-                                headers={
-                                    k: v
-                                    for k, v in resp.headers.items()
-                                    if k.lower() not in ("content-length", "transfer-encoding")
-                                },
-                            )
-                    except Exception:
-                        # httpx failed — return "no data" response (trial was consumed)
-                        return Response(
-                            content=json.dumps(
-                                {
-                                    "tool": tool_id,
-                                    "result": "no_data_available",
-                                    "trial": True,
-                                    "trial_remaining": remaining,
-                                }
-                            ),
-                            status_code=200,
-                            media_type="application/json",
-                            headers={
-                                "X-RMI-Trial": "true",
-                                "X-RMI-Trial-Remaining": str(remaining),
-                                **SECURITY_HEADERS,
-                            },
-                        )
-                else:
-                    # POST request or GET without params — try call_next
-                    response = await call_next(request)
-                    # If call_next returns 404, the tool has no POST route handler.
-                    # Trial was consumed — return "no data" response instead of 404.
-                    if response.status_code == 404:
-                        return Response(
-                            content=json.dumps(
-                                {
-                                    "tool": tool_id,
-                                    "result": "no_data_available",
-                                    "trial": True,
-                                    "trial_remaining": remaining,
-                                    "message": "Free trial used. Data not available for this address — try a real token address.",
-                                }
-                            ),
-                            status_code=200,
-                            media_type="application/json",
-                            headers={
-                                "X-RMI-Trial": "true",
-                                "X-RMI-Trial-Remaining": str(remaining),
-                                **SECURITY_HEADERS,
-                            },
-                        )
-                    response.headers["X-RMI-Trial"] = "true"
-                    response.headers["X-RMI-Trial-Remaining"] = str(remaining)
-                    for k, v in SECURITY_HEADERS.items():
-                        if k not in response.headers:
-                            response.headers[k] = v
-                    return response
-
-        except ImportError:
-            logger.warning("DataBus caching shield not available, falling back to call_next")
-            response = await call_next(request)
-            response.headers["X-RMI-Trial"] = "true"
-            response.headers["X-RMI-Trial-Remaining"] = str(remaining)
-            for k, v in SECURITY_HEADERS.items():
-                if k not in response.headers:
-                    response.headers[k] = v
-            return response
-        except Exception as e:
-            logger.error(f"Trial execution via DataBus failed for {tool_id}: {e}")
-            # Trial consumed but execution failed — refund the trial
-            try:
-                r = get_redis()
-                if r:
-                    key = f"x402:trial:{client_id}:{tool_id}"
-                    r.decr(key)  # Roll back the consumption
-            except Exception:
-                pass
-            # Return 402 — trial should be refunded since we couldn't execute
-            return build_402_response(tool_id, client_id=client_id)
+        remaining = consume_trial(tool_id, client_id, remaining)
+        return await run_trial(request, call_next, tool_id, client_id, remaining)
 
     # No trials left — return 402
     return build_402_response(tool_id, client_id=client_id)
@@ -2009,16 +1557,9 @@ def _build_discovery_response():
             asset = _resolve_asset(cfg)
             extra = _build_extra(cfg, tool_id, chain_key, pay_to, method)
 
-            req = {
-                "scheme": "exact",
-                "network": cfg["network"],
-                "asset": asset,
-                "amount": price_atoms,
-                "payTo": pay_to,
-                "maxTimeoutSeconds": 180,
-                "extra": extra,
-                "facilitators": cfg.get("facilitators", []),
-            }
+            req = { "scheme": "exact", "network": cfg["network"], "asset": asset,
+                "amount": price_atoms, "payTo": pay_to, "maxTimeoutSeconds": 180,
+                "extra": extra, "facilitators": cfg.get("facilitators", []), }
             if "tokens" in cfg:
                 req["supportedTokens"] = list(cfg["tokens"].keys())
             requirements.append(req)
@@ -2031,89 +1572,56 @@ def _build_discovery_response():
                 "investigation_report": "Full investigation report — on-chain forensics, financial valuation, OSINT, scam scoring in one deliverable",
                 "forensic_pack": "Forensic Investigation Pack — valuation + OSINT + report at 33% discount",
             }
-            desc = _TOOL_DESCRIPTIONS.get(tool_id, f"{tool_id} — crypto intelligence tool")
-        tools[tool_id] = {
-            "description": desc,
-            "price_usd": price_usd,
-            "category": category,
-            "trial_free": trial_free,
+            desc = _TOOL_DESCRIPTIONS.get(
+                tool_id, f"{tool_id} — crypto intelligence tool"
+            )
+        tools[tool_id] = { "description": desc, "price_usd": price_usd,
+            "category": category, "trial_free": trial_free,
             "trial_description": f"{trial_free} free calls before payment required",
-            "requirements": requirements,
-        }
+            "requirements": requirements, }
 
     # Build spec-compliant supportedNetworks array
     supported_networks = []
     for ck, cv in CHAIN_USDC.items():
-        net = {
-            "network": cv["network"],
-            "name": CHAIN_NAMES.get(ck, ck),
-            "chainId": cv.get("chain_id"),
-            "currency": cv.get("name", "USD Coin"),
-            "facilitators": cv.get("facilitators", []),
-        }
+        net = { "network": cv["network"], "name": CHAIN_NAMES.get(ck, ck),
+            "chainId": cv.get("chain_id"), "currency": cv.get("name", "USD Coin"),
+            "facilitators": cv.get("facilitators", []), }
         if "tokens" in cv:
             net["tokens"] = dict(cv["tokens"].items())
         supported_networks.append(net)
 
     # Build spec-compliant paymentFacilitators array
-    facilitator_map = {
-        "coinbase_cdp": {
-            "name": "Coinbase CDP",
+    facilitator_map = { "coinbase_cdp": { "name": "Coinbase CDP",
             "description": "Fee-free Base + Solana USDC via Coinbase Developer Platform",
-            "url": "https://cdp.coinbase.com",
-        },
-        "payai": {
-            "name": "PayAI",
+            "url": "https://cdp.coinbase.com", }, "payai": { "name": "PayAI",
             "description": "Base + Solana USDC, deferred settlement",
-            "url": "https://payai.network",
-        },
-        "primev": {
-            "name": "Primev",
+            "url": "https://payai.network", }, "primev": { "name": "Primev",
             "description": "Fee-free Ethereum via mev-commit preconfirmations",
-            "url": "https://primev.xyz",
-        },
-        "cloudflare_x402": {
+            "url": "https://primev.xyz", }, "cloudflare_x402": {
             "name": "Cloudflare x402",
             "description": "Base Sepolia + Ethereum fallback",
-            "url": "https://x402.org",
-        },
-        "eip7702": {
-            "name": "EIP-7702 Universal",
+            "url": "https://x402.org", }, "eip7702": { "name": "EIP-7702 Universal",
             "description": "Universal EVM — BSC, Polygon, Avalanche, Fantom, Gnosis, Arbitrum, Optimism, Base",
-            "url": "https://eips.ethereum.org/EIPS/eip-7702",
-        },
-        "tron_selfverify": {
+            "url": "https://eips.ethereum.org/EIPS/eip-7702", }, "tron_selfverify": {
             "name": "TRON Self-Verify",
             "description": "TRON USDT/USDC/USDD — self-verified via TronGrid (fee-free)",
-            "url": "https://trongrid.io",
-        },
-        "bitcoin_selfverify": {
+            "url": "https://trongrid.io", }, "bitcoin_selfverify": {
             "name": "Bitcoin Self-Verify",
             "description": "Bitcoin BTC — self-verified via Mempool.space (fee-free, 1-conf)",
-            "url": "https://mempool.space",
-        },
-        "asterpay": {
-            "name": "AsterPay",
-            "description": "EUR/SEPA European off-ramp",
-            "url": "https://asterpay.io",
-        },
-    }
+            "url": "https://mempool.space", }, "asterpay": { "name": "AsterPay",
+            "description": "EUR/SEPA European off-ramp", "url": "https://asterpay.io",
+        }, }
     payment_facilitators = []
     for fk, fv in facilitator_map.items():
-        fac_networks = [n["network"] for n in supported_networks if fk in n.get("facilitators", [])]
-        payment_facilitators.append(
-            {
-                "name": fv["name"],
-                "description": fv["description"],
-                "url": fv["url"],
-                "supportedNetworks": fac_networks,
-            }
+        fac_networks = [
+            n["network"] for n in supported_networks if fk in n.get("facilitators", [])
+        ]
+        payment_facilitators.append( { "name": fv["name"],
+                "description": fv["description"], "url": fv["url"],
+                "supportedNetworks": fac_networks, }
         )
 
-    return {
-        "x402": {
-            "version": "2",
-            "protocol": "x402",
+    return { "x402": { "version": "2", "protocol": "x402",
             "description": "Rug Munch Intelligence (RMI) — Multi-chain x402 payment system. Crypto scam detection, market analysis, and security intelligence via micropayments.",
             "trial_policy": "1 free trial per tool without wallet. Connect wallet for 3 free calls per standard tool, 1 per premium tool.",
             "refund_policy": "Full refund if tool returns no data. Request within 48h via POST /api/v1/x402/refund with tx hash.",
@@ -2126,19 +1634,14 @@ def _build_discovery_response():
                 "tron_selfverify": "TRON USDT/USDC/USDD — self-verified via TronGrid (fee-free)",
                 "bitcoin_selfverify": "Bitcoin BTC — self-verified via Mempool.space (fee-free, 1-conf)",
                 "asterpay": "EUR/SEPA European off-ramp",
-                "x402_rs": "Self-hosted x402-rs — multi-chain (requires Docker)",
-            },
-        },
+                "x402_rs": "Self-hosted x402-rs — multi-chain (requires Docker)", }, },
         "gateway_url": "https://mcp.rugmunch.io",
         "payment_endpoint": "https://mcp.rugmunch.io/api/v1/x402-tools",
         "supported_chains": list(CHAIN_USDC.keys()),
         "supportedNetworks": supported_networks,
-        "paymentFacilitators": payment_facilitators,
-        "chain_count": len(CHAIN_USDC),
-        "facilitator_count": len(payment_facilitators),
-        "total_tools": len(tools),
-        "tools": tools,
-    }
+        "paymentFacilitators": payment_facilitators, "chain_count": len(CHAIN_USDC),
+        "facilitator_count": len(payment_facilitators), "total_tools": len(tools),
+        "tools": tools, }
 
 
 def _resolve_pay_to(method: str) -> str:
@@ -2162,7 +1665,9 @@ def _resolve_asset(cfg: dict) -> str:
     return asset
 
 
-def _build_extra(cfg: dict, tool_id: str, chain_key: str, pay_to: str, method: str) -> dict:
+def _build_extra(
+    cfg: dict, tool_id: str, chain_key: str, pay_to: str, method: str
+) -> dict:
     extra = {
         "name": cfg["name"],
         "version": cfg["version"],
@@ -2198,7 +1703,10 @@ async def x402_discovery():
     global _discovery_cache, _discovery_cache_time
 
     now = time.time()
-    if _discovery_cache is not None and (now - _discovery_cache_time) < DISCOVERY_CACHE_TTL:
+    if (
+        _discovery_cache is not None
+        and (now - _discovery_cache_time) < DISCOVERY_CACHE_TTL
+    ):
         return _discovery_cache
 
     _discovery_cache = _build_discovery_response()
@@ -2323,11 +1831,8 @@ async def get_pricing_suggestions():
     """
     r = get_redis()
     if not r:
-        return JSONResponse(
-            status_code=503,
-            content={"error": "Redis unavailable"},
-            headers=SECURITY_HEADERS,
-        )
+        return JSONResponse( status_code=503, content={"error": "Redis unavailable"},
+            headers=SECURITY_HEADERS, )
     try:
         suggestions = []
         for tool_id, pricing in TOOL_PRICES.items():
@@ -2363,42 +1868,31 @@ async def get_pricing_suggestions():
             elif revenue > 0 and avg_revenue_per_call < current_price * 0.5:
                 suggestion = "check_pricing_consistency"
 
-            suggestions.append(
-                {
-                    "tool_id": tool_id,
+            suggestions.append( { "tool_id": tool_id,
                     "current_price_usd": current_price,
-                    "suggested_price_usd": suggested_price,
-                    "suggestion": suggestion,
-                    "stats": {
-                        "paid_calls": paid_calls,
-                        "trial_calls": trial_calls,
+                    "suggested_price_usd": suggested_price, "suggestion": suggestion,
+                    "stats": { "paid_calls": paid_calls, "trial_calls": trial_calls,
                         "total_calls": total_calls,
                         "conversion_rate": round(conversion_rate * 100, 1),
                         "revenue_usd": round(revenue, 4),
-                        "avg_revenue_per_call": round(avg_revenue_per_call, 4),
-                    },
-                }
+                        "avg_revenue_per_call": round(avg_revenue_per_call, 4), }, }
             )
 
         # Sort: actionable suggestions first
-        suggestions.sort(
-            key=lambda s: 0 if s["suggestion"] and s["suggestion"] != "insufficient_data" else 1
+        suggestions.sort( key=lambda s: (
+                0 if s["suggestion"] and s["suggestion"] != "insufficient_data" else 1
+            )
         )
 
-        return {
-            "suggestions": suggestions,
-            "total_tools": len(suggestions),
-            "actionable": sum(
-                1 for s in suggestions if s["suggestion"] and s["suggestion"] != "insufficient_data"
-            ),
-        }
+        return { "suggestions": suggestions, "total_tools": len(suggestions),
+            "actionable": sum( 1
+                for s in suggestions
+                if s["suggestion"] and s["suggestion"] != "insufficient_data"
+            ), }
     except Exception as e:
         logger.error(f"Pricing suggestions error: {e}")
-        return JSONResponse(
-            status_code=500,
-            content={"error": str(e)[:100]},
-            headers=SECURITY_HEADERS,
-        )
+        return JSONResponse( status_code=500, content={"error": str(e)[:100]},
+            headers=SECURITY_HEADERS, )
 
 
 # ── Refund Request Endpoint ──

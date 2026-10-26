@@ -23,10 +23,9 @@ from contextlib import suppress
 from datetime import UTC, datetime
 from typing import Any
 
+from app.launch_fairness_analyzer import analyze_launch_fairness
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field, field_validator
-
-from app.launch_fairness_analyzer import analyze_launch_fairness
 
 logger = logging.getLogger("x402_launch_fairness")
 

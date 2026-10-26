@@ -11,10 +11,9 @@ crypto scam investigation capabilities.
 
 import logging
 
+from app.routers.x402_tools import fetch_with_fallback, record_x402_payment
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
-
-from app.routers.x402_tools import fetch_with_fallback, record_x402_payment
 
 logger = logging.getLogger("x402_forensic_tools")
 router = APIRouter(prefix="/api/v1/x402-tools", tags=["x402-forensic-tools"])

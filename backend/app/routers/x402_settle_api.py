@@ -150,8 +150,7 @@ async def settle_x402(req: SettleRequest, request: Request):
         import base64
 
         raw = req.x_pay
-        if raw.startswith("X-PAY "):
-            raw = raw[6:]
+        raw = raw.removeprefix("X-PAY ")
         payload = json.loads(base64.b64decode(raw))
     except Exception:
         try:

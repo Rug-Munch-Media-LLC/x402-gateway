@@ -22,11 +22,18 @@ Security:
   - Zero backdoors: no direct DB/API access, everything through databus.fetch()
 """
 
-import json
 import logging
 import os
 from typing import Any
 
+from app.routers.x402_payment_verify import (
+    PaymentContext,
+    TrialHooks,
+)
+from app.routers.x402_payment_verify import (
+    verify_x402_payment as _verify_x402_payment,
+)
+from app.routers.x402_redis_errors import REDIS_ERRORS
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
@@ -873,7 +880,11 @@ async def _get_trial_redis():
         )
         await r.ping()
         return r
-    except Exception:
+    except ImportError as exc:
+        logger.warning("trial_redis_library_missing error=%s", exc)
+        return None
+    except REDIS_ERRORS + (ValueError,) as exc:
+        logger.warning("trial_redis_unavailable error=%s", exc)
         return None
 
 
@@ -901,9 +912,18 @@ async def check_trial(identifier: str, tool_id: str, max_trials: int) -> dict[st
                 "resets_in_seconds": ttl if ttl > 0 else TRIAL_WINDOW_SECONDS,
             }
 
-        return {"allowed": True, "remaining": max_trials - used_count, "reason": "trial_available"}
-    except Exception as e:
-        logger.error(f"Trial check error: {e}")
+        return {
+            "allowed": True,
+            "remaining": max_trials - used_count,
+            "reason": "trial_available",
+        }
+    except REDIS_ERRORS + (ValueError,) as exc:
+        logger.error(
+            "trial_check_failed identifier=%s tool=%s error=%s",
+            identifier,
+            tool_id,
+            exc,
+        )
         return {"allowed": True, "remaining": max_trials, "reason": "error"}
     finally:
         await r.close()
@@ -921,7 +941,8 @@ async def consume_trial(identifier: str, tool_id: str) -> bool:
         pipe.expire(key, TRIAL_WINDOW_SECONDS)
         await pipe.execute()
         return True
-    except Exception:
+    except REDIS_ERRORS as exc:
+        logger.warning("trial_consume_failed tool=%s error=%s", tool_id, exc)
         return False
     finally:
         await r.close()
@@ -941,7 +962,15 @@ def _clean_response(result: dict) -> dict:
     if not isinstance(result, dict):
         return result
     # Remove provider-identifying fields
-    for field in ("source", "is_local", "tier", "fallback_used", "consumer", "packaging", "cached"):
+    for field in (
+        "source",
+        "is_local",
+        "tier",
+        "fallback_used",
+        "consumer",
+        "packaging",
+        "cached",
+    ):
         result.pop(field, None)
     # Also clean nested 'data' if it contains source references
     if "data" in result and isinstance(result["data"], dict):
@@ -950,138 +979,25 @@ def _clean_response(result: dict) -> dict:
     return result
 
 
-from .payment_headers import select_payment_header
+# ── x402 Payment Verification ─────────────────────────────
+# Step logic lives in x402_payment_verify; pricing + trial storage are injected
+# here so this router stays the single source for both.
 
 
-async def verify_x402_payment(request: Request, tool_id: str, price_usd: float) -> dict[str, Any]:
-    """Verify x402 payment header. Returns payment info or 402 response.
+_TRIALS = TrialHooks(check=check_trial, consume=consume_trial)
+_PAYMENT_CONTEXT = PaymentContext(pricing=X402_TOOL_PRICING, trials=_TRIALS)
 
-    For humans: Connect wallet via X-WALLET header → full trial allotment.
-    For bots: Fingerprint via X-Device-Id header → 1 trial, then require wallet.
-    Both paths use the same Redis-backed trial tracking.
-    """
-    # Check for x402 payment header
-    x402_payment, x402_version = select_payment_header(request.headers)
-    if not x402_payment:
-        # Resolve identifier for trial check: wallet first, then fingerprint, then IP
-        wallet = request.headers.get("X-WALLET", "") or request.query_params.get("wallet", "")
-        fingerprint = request.headers.get("X-Device-Id", "") or request.headers.get(
-            "X-Fingerprint", ""
-        )
-        ip = request.client.host if request.client else "unknown"
 
-        # Use the most specific identifier available
-        identifier = wallet or fingerprint or f"ip:{ip}"
-
-        pricing = X402_TOOL_PRICING.get(tool_id, {})
-        max_trials = pricing.get("trial_free", 0)
-        if max_trials > 0:
-            # Connected wallets get full trial allotment; fingerprints get 1 trial max
-            if wallet:
-                effective_max = max_trials
-            elif fingerprint:
-                effective_max = min(max_trials, 1)  # Bots get 1 trial, must connect wallet for more
-            else:
-                effective_max = 1  # IP-only: 1 trial max
-
-            trial = await check_trial(identifier, tool_id, effective_max)
-            if trial["allowed"]:
-                await consume_trial(identifier, tool_id)
-                return {
-                    "paid": False,
-                    "trial": True,
-                    "remaining": trial["remaining"],
-                    "identifier": identifier,
-                    "identifier_type": "wallet" if wallet else "fingerprint",
-                }
-
-        # Return 402 Payment Required
-        raise HTTPException(
-            status_code=402,
-            detail={
-                "error": "payment_required",
-                "tool_id": tool_id,
-                "price_usd": price_usd,
-                "payment_required": {
-                    "x402_version": x402_version,
-                    "max_amount": f"{price_usd:.4f}",
-                    "payment_type": "USDC",
-                    "networks": [
-                        "base",
-                        "solana",
-                        "ethereum",
-                        "bsc",
-                        "arbitrum",
-                        "optimism",
-                        "polygon",
-                        "avalanche",
-                    ],
-                    "usdc_addresses": {
-                        "base": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
-                        "solana": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
-                        "ethereum": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
-                    },
-                    "pay_to": os.getenv(
-                        "X402_EVM_PAY_TO", "0x1E3AC01d0fdb976179790BDD02823196A92705C9"
-                    ),
-                    "wallet_connect": True,
-                    "connect_wallet_for_trials": pricing.get("trial_free", 0) > 0,
-                },
-                "trial_free": pricing.get("trial_free", 0),
-                "identifier": identifier,
-            },
-        )
-
-    # Payment header present — check idempotency first to prevent double-charging
-    idempotency_key = request.headers.get("X-Idempotency-Key", "")
-    if idempotency_key:
-        import hashlib
-
-        import redis.asyncio as redis_lib
-
-        r = redis_lib.Redis(
-            host=os.getenv("REDIS_HOST", "localhost"),
-            port=int(os.getenv("REDIS_PORT", "6379")),
-            password=os.getenv("REDIS_PASSWORD", ""),
-            decode_responses=True,
-        )
-        idem_hash = hashlib.sha256(f"{idempotency_key}:{tool_id}".encode()).hexdigest()
-        cached_result = await r.get(f"x402:idempotent:{idem_hash}")
-        if cached_result:
-            logger.info(f"Idempotent x402 payment hit for key: {idempotency_key}")
-            return json.loads(cached_result)
-
-    # Verify via x402 enforcement
-    try:
-        from app.routers.x402_enforcement import verify_payment
-
-        result = await verify_payment(request, tool_id, price_usd)
-        if result.get("verified"):
-            payment_info = {"paid": True, "tx": result.get("tx_hash", ""), "amount": price_usd}
-
-            # Cache successful payment for idempotency (24h TTL)
-            if idempotency_key:
-                import hashlib
-
-                import redis.asyncio as redis_lib
-
-                r = redis_lib.Redis(
-                    host=os.getenv("REDIS_HOST", "localhost"),
-                    port=int(os.getenv("REDIS_PORT", "6379")),
-                    password=os.getenv("REDIS_PASSWORD", ""),
-                    decode_responses=True,
-                )
-                idem_hash = hashlib.sha256(f"{idempotency_key}:{tool_id}".encode()).hexdigest()
-                await r.setex(f"x402:idempotent:{idem_hash}", 86400, json.dumps(payment_info))
-
-            return payment_info
-    except (ImportError, Exception) as e:
-        logger.debug(f"x402 enforcement verification: {e}")
-        # If enforcement not available, accept payment header as-is for now
-        # In production, this would be stricter
-        return {"paid": True, "tx": "x402_verified", "amount": price_usd}
-
-    raise HTTPException(status_code=402, detail={"error": "payment_verification_failed"})
+async def verify_x402_payment(
+    request: Request, tool_id: str, price_usd: float
+) -> dict[str, Any]:
+    """Verify x402 payment for this router's pricing table and trial store."""
+    return await _verify_x402_payment(
+        request,
+        tool_id,
+        price_usd,
+        context=_PAYMENT_CONTEXT,
+    )
 
 
 # ── Request Models ───────────────────────────────────────────────
@@ -1168,17 +1084,23 @@ async def x402_catalog(request: Request):
         },
         "tiers": {
             "basic": {
-                "count": sum(1 for t in X402_TOOL_PRICING.values() if t["category"] == "basic"),
+                "count": sum(
+                    1 for t in X402_TOOL_PRICING.values() if t["category"] == "basic"
+                ),
                 "price_range": "$0.01-$0.02",
                 "trial_free": "3-5 calls",
             },
             "premium": {
-                "count": sum(1 for t in X402_TOOL_PRICING.values() if t["category"] == "premium"),
+                "count": sum(
+                    1 for t in X402_TOOL_PRICING.values() if t["category"] == "premium"
+                ),
                 "price_range": "$0.05-$0.10",
                 "trial_free": "1-2 calls",
             },
             "elite": {
-                "count": sum(1 for t in X402_TOOL_PRICING.values() if t["category"] == "elite"),
+                "count": sum(
+                    1 for t in X402_TOOL_PRICING.values() if t["category"] == "elite"
+                ),
                 "price_range": "$0.15-$0.25",
                 "trial_free": "0 calls",
             },
@@ -1235,7 +1157,9 @@ async def x402_trial_status(identifier: str):
                 "price_usd": info["price_usd"],
                 "max_trials": max_trials,
                 "remaining": result["remaining"],
-                "resets_in_seconds": result.get("resets_in_seconds", TRIAL_WINDOW_SECONDS),
+                "resets_in_seconds": result.get(
+                    "resets_in_seconds", TRIAL_WINDOW_SECONDS
+                ),
             }
     return {"identifier": identifier, "trials": trials}
 
@@ -1279,7 +1203,9 @@ async def x402_token_detail(req: MintRequest, request: Request):
 async def x402_trending(req: QueryRequest, request: Request):
     """Trending tokens feed. $0.01/call."""
     await verify_x402_payment(request, "trending", 0.01)
-    result = await databus.fetch("trending", consumer_type="x402_paid", x402_tier="basic")
+    result = await databus.fetch(
+        "trending", consumer_type="x402_paid", x402_tier="basic"
+    )
     return _clean_response(result) or {"error": "no_data"}
 
 
@@ -1287,7 +1213,9 @@ async def x402_trending(req: QueryRequest, request: Request):
 async def x402_market_overview(request: Request):
     """Market landscape overview. $0.02/call."""
     await verify_x402_payment(request, "market_overview", 0.02)
-    result = await databus.fetch("market_overview", consumer_type="x402_paid", x402_tier="basic")
+    result = await databus.fetch(
+        "market_overview", consumer_type="x402_paid", x402_tier="basic"
+    )
     return _clean_response(result) or {"error": "no_data"}
 
 
@@ -1295,7 +1223,9 @@ async def x402_market_overview(request: Request):
 async def x402_market_movers(request: Request):
     """Top market movers. $0.01/call."""
     await verify_x402_payment(request, "market_movers", 0.01)
-    result = await databus.fetch("market_movers", consumer_type="x402_paid", x402_tier="basic")
+    result = await databus.fetch(
+        "market_movers", consumer_type="x402_paid", x402_tier="basic"
+    )
     return _clean_response(result) or {"error": "no_data"}
 
 
@@ -1326,7 +1256,9 @@ async def x402_news(req: QueryRequest, request: Request):
 async def x402_social_feed(request: Request):
     """Social intelligence feed. $0.01/call."""
     await verify_x402_payment(request, "social_feed", 0.01)
-    result = await databus.fetch("social_feed", consumer_type="x402_paid", x402_tier="basic")
+    result = await databus.fetch(
+        "social_feed", consumer_type="x402_paid", x402_tier="basic"
+    )
     return _clean_response(result) or {"error": "no_data"}
 
 
@@ -1344,7 +1276,9 @@ async def x402_dex_data(req: MintRequest, request: Request):
 async def x402_defi_protocols(request: Request):
     """DeFi protocol tracker. $0.01/call."""
     await verify_x402_payment(request, "defi_protocols", 0.01)
-    result = await databus.fetch("defi_protocols", consumer_type="x402_paid", x402_tier="basic")
+    result = await databus.fetch(
+        "defi_protocols", consumer_type="x402_paid", x402_tier="basic"
+    )
     return _clean_response(result) or {"error": "no_data"}
 
 
@@ -1366,7 +1300,9 @@ async def x402_prediction_markets(req: QueryRequest, request: Request):
 async def x402_prediction_signals(request: Request):
     """Automated trading signals. $0.02/call."""
     await verify_x402_payment(request, "prediction_signals", 0.02)
-    result = await databus.fetch("prediction_signals", consumer_type="x402_paid", x402_tier="basic")
+    result = await databus.fetch(
+        "prediction_signals", consumer_type="x402_paid", x402_tier="basic"
+    )
     return _clean_response(result) or {"error": "no_data"}
 
 
@@ -1404,7 +1340,10 @@ async def x402_wallet_balance(req: AddressRequest, request: Request):
     """Wallet balance check. $0.01/call."""
     await verify_x402_payment(request, "wallet_balance", 0.01)
     result = await databus.fetch(
-        "wallet_balance", address=req.address, consumer_type="x402_paid", x402_tier="basic"
+        "wallet_balance",
+        address=req.address,
+        consumer_type="x402_paid",
+        x402_tier="basic",
     )
     return _clean_response(result) or {"error": "no_data"}
 
@@ -1456,7 +1395,10 @@ async def x402_socialfi_resolve(req: AddressRequest, request: Request):
     """Social identity resolver. $0.01/call."""
     await verify_x402_payment(request, "socialfi_resolve", 0.01)
     result = await databus.fetch(
-        "socialfi_resolve", address=req.address, consumer_type="x402_paid", x402_tier="basic"
+        "socialfi_resolve",
+        address=req.address,
+        consumer_type="x402_paid",
+        x402_tier="basic",
     )
     return _clean_response(result) or {"error": "no_data"}
 
@@ -1576,7 +1518,11 @@ async def x402_wallet_pnl(req: AddressRequest, request: Request):
     """Wallet PnL tracker. $0.05/call."""
     payment = await verify_x402_payment(request, "wallet_pnl", 0.05)
     result = await databus.fetch(
-        "wallet_pnl", address=req.address, consumer_type="x402_paid", x402_tier="premium", **payment
+        "wallet_pnl",
+        address=req.address,
+        consumer_type="x402_paid",
+        x402_tier="premium",
+        **payment,
     )
     return _clean_response(result) or {"error": "no_data"}
 
@@ -1634,7 +1580,11 @@ async def x402_rag_search(req: QueryRequest, request: Request):
     """Knowledge search engine. $0.05/call."""
     payment = await verify_x402_payment(request, "rag_search", 0.05)
     result = await databus.fetch(
-        "rag_search", query=req.query, consumer_type="x402_paid", x402_tier="premium", **payment
+        "rag_search",
+        query=req.query,
+        consumer_type="x402_paid",
+        x402_tier="premium",
+        **payment,
     )
     return _clean_response(result) or {"error": "no_data"}
 

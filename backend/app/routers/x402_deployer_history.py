@@ -23,10 +23,9 @@ from contextlib import suppress
 from datetime import UTC, datetime
 from typing import Any
 
+from app.deployer_history import DeployerHistoryAnalyzer
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field, field_validator
-
-from app.deployer_history import DeployerHistoryAnalyzer
 
 logger = logging.getLogger("x402_deployer_history")
 

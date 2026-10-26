@@ -20,15 +20,14 @@ import logging
 import os
 import time
 
-from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
-
 from app.routers.user_profiles import (
     add_credits,
     get_user_by_wallet,
     set_subscription,
 )
 from app.routers.x402_verifier import get_verifier
+from fastapi import APIRouter, HTTPException
+from pydantic import BaseModel
 
 logger = logging.getLogger("x402_subscriptions")
 
@@ -270,7 +269,9 @@ async def cancel_subscription(req: CancelRequest):
             r.set(_key_sub(wallet), json.dumps(sub))
 
             # Also cancel in user profiles
-            from app.routers.user_profiles import cancel_subscription as cancel_profile_sub
+            from app.routers.user_profiles import (
+                cancel_subscription as cancel_profile_sub,
+            )
 
             cancel_profile_sub(sub.get("user_id", ""))
 

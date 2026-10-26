@@ -171,7 +171,9 @@ def load_external_mcp_tools() -> list[dict]:
         try:
             import importlib.util
 
-            spec = importlib.util.spec_from_file_location("expanded_mcp_catalog", catalog_path)
+            spec = importlib.util.spec_from_file_location(
+                "expanded_mcp_catalog", catalog_path
+            )
             if spec is None or spec.loader is None:
                 raise ImportError("Cannot load spec for expanded_mcp_catalog")
             module = importlib.util.module_from_spec(spec)  # type: ignore[arg-type]
@@ -199,45 +201,35 @@ def load_external_mcp_tools() -> list[dict]:
             services = data.get("services", data.get("tools", data))
             if isinstance(services, list):
                 for service in services:
-                    service_name = service.get("name", service.get("service", "unknown"))
+                    service_name = service.get(
+                        "name", service.get("service", "unknown")
+                    )
                     service_tools = service.get("tools", [])
                     if isinstance(service_tools, list):
                         for t in service_tools:
                             tool_id = t.get("name", t.get("id", ""))
                             if tool_id:
-                                tools.append(
-                                    {
-                                        "id": tool_id,
+                                tools.append( { "id": tool_id,
                                         "name": t.get("description", tool_id),
-                                        "description": t.get("description", f"MCP tool: {tool_id}"),
-                                        "price": "$0.01",
-                                        "priceUsd": 0.01,
-                                        "category": "mcp-external",
-                                        "trialFree": 3,
-                                        "method": "MCP",
-                                        "service": service_name,
+                                        "description": t.get(
+                                            "description", f"MCP tool: {tool_id}"
+                                        ), "price": "$0.01", "priceUsd": 0.01,
+                                        "category": "mcp-external", "trialFree": 3,
+                                        "method": "MCP", "service": service_name,
                                         "source": "mcp-router",
-                                        "chains": ["SOLANA", "BASE"],
-                                    }
+                                        "chains": ["SOLANA", "BASE"], }
                                 )
                     else:
                         # Flat tool list
                         for key, val in service.items():
                             if isinstance(val, dict) and "name" in val:
-                                tools.append(
-                                    {
-                                        "id": key,
-                                        "name": val.get("name", key),
+                                tools.append( { "id": key, "name": val.get("name", key),
                                         "description": val.get("description", ""),
-                                        "price": "$0.01",
-                                        "priceUsd": 0.01,
-                                        "category": "mcp-external",
-                                        "trialFree": 3,
-                                        "method": "MCP",
-                                        "service": service_name,
+                                        "price": "$0.01", "priceUsd": 0.01,
+                                        "category": "mcp-external", "trialFree": 3,
+                                        "method": "MCP", "service": service_name,
                                         "source": "mcp-router",
-                                        "chains": ["SOLANA", "BASE"],
-                                    }
+                                        "chains": ["SOLANA", "BASE"], }
                                 )
 
         if tools:
@@ -308,7 +300,9 @@ def discover_route_tools() -> list[dict]:
                 continue
             # Try to find docstring for description
             desc = f"Tool: {route}"
-            doc_match = re.search(rf'@router\.(?:get|post)\("/{route}"\)[\s\S]*?"""([^"]*)"""', content)
+            doc_match = re.search(
+                rf'@router\.(?:get|post)\("/{route}"\)[\s\S]*?"""([^"]*)"""', content
+            )
             if doc_match:
                 desc = doc_match.group(1).strip().split("\n")[0].strip()
             tools.append(
@@ -357,49 +351,35 @@ def get_catalog():
             if chain:
                 chains = [chain.upper()]
 
-            all_tools[tool_id] = {
-                "id": tool_id,
-                "name": desc,
-                "description": desc,
+            all_tools[tool_id] = { "id": tool_id, "name": desc, "description": desc,
                 "price": f"${pricing.get('price_usd', 0.01):.2f}",
                 "priceUsd": pricing.get("price_usd", 0.01),
                 "priceAtomic": pricing.get("price_atoms", "10000"),
-                "category": category,
-                "trialFree": pricing.get("trial_free", 1),
-                "method": "POST",
-                "service": "rmi-native",
-                "source": "enforcement",
-                "chains": chains,
-                "base_tool": base_tool,
-                "chain": chain,
-            }
+                "category": category, "trialFree": pricing.get("trial_free", 1),
+                "method": "POST", "service": "rmi-native", "source": "enforcement",
+                "chains": chains, "base_tool": base_tool, "chain": chain, }
             services.add("rmi-native")
             categories.add(category)
 
         # Add databus-only tools (not in TOOL_PRICES enforcement)
         try:
-            from app.routers.x402_databus_tools import X402_TOOL_PRICING as DATABUS_TOOLS
+            from app.routers.x402_databus_tools import (
+                X402_TOOL_PRICING as DATABUS_TOOLS, )
 
             for tool_id, pricing in DATABUS_TOOLS.items():
                 if tool_id not in all_tools:
-                    desc = pricing.get("description", f"{tool_id} — DataBus crypto intelligence")
+                    desc = pricing.get(
+                        "description", f"{tool_id} — DataBus crypto intelligence"
+                    )
                     category = pricing.get("category", "data")
-                    all_tools[tool_id] = {
-                        "id": tool_id,
-                        "name": desc,
+                    all_tools[tool_id] = { "id": tool_id, "name": desc,
                         "description": desc,
                         "price": f"${pricing.get('price_usd', 0.05):.2f}",
                         "priceUsd": pricing.get("price_usd", 0.05),
                         "priceAtomic": pricing.get("price_atoms", "50000"),
-                        "category": category,
-                        "trialFree": pricing.get("trial_free", 1),
-                        "method": "POST",
-                        "service": "rmi-databus",
-                        "source": "databus",
-                        "chains": [],
-                        "base_tool": None,
-                        "chain": None,
-                    }
+                        "category": category, "trialFree": pricing.get("trial_free", 1),
+                        "method": "POST", "service": "rmi-databus", "source": "databus",
+                        "chains": [], "base_tool": None, "chain": None, }
                     services.add("rmi-databus")
                     categories.add(category)
         except ImportError:
@@ -410,12 +390,9 @@ def get_catalog():
         categories = set()
 
     # ── Enrich from gateway configs (add chain info, icons) ──
-    candidates = [
-        "/app/x402-gateway",
-        os.path.join(base_dir, "x402-gateway"),
-        os.path.join(os.path.dirname(base_dir), "x402-gateway"),
-        "/root/backend/x402-gateway",
-    ]
+    from app.routers.x402_gateway_paths import gateway_base_candidates
+
+    candidates = gateway_base_candidates(base_dir)
     gateway_base = None
     for c in candidates:
         if os.path.isdir(c):
@@ -450,8 +427,12 @@ def get_catalog():
         tid = t["id"]
         if tid in all_tools:
             # Enrich — route definitions may have more accurate descriptions
-            if not all_tools[tid].get("description") or all_tools[tid].get("description", "").startswith("Tool:"):
-                all_tools[tid]["description"] = t.get("description", all_tools[tid].get("description", ""))
+            if not all_tools[tid].get("description") or all_tools[tid].get(
+                "description", ""
+            ).startswith("Tool:"):
+                all_tools[tid]["description"] = t.get(
+                    "description", all_tools[tid].get("description", "")
+                )
         else:
             all_tools[tid] = t
             services.add("rmi-native")
@@ -465,20 +446,17 @@ def get_catalog():
             continue
         # Normalize pricing - external tools may have price_usd (snake) or priceUsd (camel)
         price_usd = t.get("price_usd", t.get("priceUsd", 0.01))
-        price_atoms = t.get("price_atoms", t.get("priceAtomic", str(int(price_usd * 1_000_000))))
+        price_atoms = t.get(
+            "price_atoms", t.get("priceAtomic", str(int(price_usd * 1_000_000)))
+        )
         trial_free = t.get("trial_free", t.get("trialFree", 1))
 
         if tid in all_tools:
             # Enrich existing entry with external pricing if missing
             if not all_tools[tid].get("priceUsd"):
-                all_tools[tid].update(
-                    {
-                        "price": f"${price_usd:.2f}",
-                        "priceUsd": price_usd,
-                        "priceAtomic": price_atoms,
-                        "trialFree": trial_free,
-                        "method": t.get("method", "POST"),
-                    }
+                all_tools[tid].update( { "price": f"${price_usd:.2f}",
+                        "priceUsd": price_usd, "priceAtomic": price_atoms,
+                        "trialFree": trial_free, "method": t.get("method", "POST"), }
                 )
         else:
             # New tool from external MCP
@@ -494,18 +472,8 @@ def get_catalog():
             categories.add(t.get("category", "unknown"))
 
     # Base tools that aren't variants should show all chains they support
-    chain_suffixes = [
-        "_solana",
-        "_base",
-        "_ethereum",
-        "_bsc",
-        "_arbitrum",
-        "_polygon",
-        "_avalanche",
-        "_fantom",
-        "_gnosis",
-        "_optimism",
-    ]
+    chain_suffixes = [ "_solana", "_base", "_ethereum", "_bsc", "_arbitrum", "_polygon",
+        "_avalanche", "_fantom", "_gnosis", "_optimism", ]
     for tid, tool in all_tools.items():
         # If a base tool has variants, show chains on the base
         base = tid
@@ -526,17 +494,13 @@ def get_catalog():
                 tool["chains"] = sorted(set(variant_chains + tool.get("chains", [])))
 
     # Sanitize ALL tools before returning
-    tool_list = sorted([_sanitize_tool(dict(t)) for t in all_tools.values()], key=lambda x: x.get("priceUsd", 0))
+    tool_list = sorted( [_sanitize_tool(dict(t)) for t in all_tools.values()],
+        key=lambda x: x.get("priceUsd", 0), )
 
-    result = {
-        "chains": chains or {"base": 0, "solana": 0},
-        "total_tools": len(tool_list),
-        "total_chains": len(chains) or 2,
-        "total_services": len(services),
-        "tools": tool_list,
-        "categories": sorted(categories),
-        "services": sorted(services),
-    }
+    result = { "chains": chains or {"base": 0, "solana": 0},
+        "total_tools": len(tool_list), "total_chains": len(chains) or 2,
+        "total_services": len(services), "tools": tool_list,
+        "categories": sorted(categories), "services": sorted(services), }
 
     _catalog_cache.clear()
     _catalog_cache.update(result)
@@ -562,7 +526,9 @@ async def list_chain_tools(chain: str):
 async def list_category_tools(category: str):
     """Get tools in a specific category across all chains"""
     catalog = get_catalog()
-    filtered = [t for t in catalog["tools"] if t.get("category", "") == category.lower()]
+    filtered = [
+        t for t in catalog["tools"] if t.get("category", "") == category.lower()
+    ]
     return {"category": category, "count": len(filtered), "tools": filtered}
 
 

@@ -5,7 +5,7 @@ v1: ``X-PAYMENT`` / ``X-Pay`` (raw or ``x402 <json>``).
 """
 from __future__ import annotations
 
-from typing import Mapping
+from collections.abc import Mapping
 
 
 def select_payment_header(headers: Mapping[str, str]) -> tuple[str, int]:
