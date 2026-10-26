@@ -21,14 +21,13 @@ import os
 from contextlib import suppress
 
 import redis as _redis_mod
-from fastapi import APIRouter, HTTPException, Request
-from pydantic import BaseModel, Field, field_validator
-
 from app.insider_network import (
     format_insider_network_report,
     get_insider_network_analyzer,
     is_valid_address,
 )
+from fastapi import APIRouter, HTTPException, Request
+from pydantic import BaseModel, Field, field_validator
 
 logger = logging.getLogger("x402_insider_network")
 

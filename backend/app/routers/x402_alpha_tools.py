@@ -15,10 +15,9 @@ import time
 from datetime import datetime
 
 import aiohttp
+from app.domain.scoring import band_for, load_policy, weighted_composite
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
-
-from app.domain.scoring import band_for, load_policy, weighted_composite
 
 logger = logging.getLogger("x402.alpha")
 

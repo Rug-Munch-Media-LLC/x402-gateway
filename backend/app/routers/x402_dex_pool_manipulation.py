@@ -21,14 +21,13 @@ import os
 from contextlib import suppress
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Request
-from pydantic import BaseModel, Field, field_validator
-
 from app.dex_pool_manipulation_analyzer import (
     DEXPoolManipulationAnalyzer,
     format_risk_report,
     is_valid_address,
 )
+from fastapi import APIRouter, HTTPException, Request
+from pydantic import BaseModel, Field, field_validator
 
 logger = logging.getLogger("x402_dex_pool_manipulation")
 

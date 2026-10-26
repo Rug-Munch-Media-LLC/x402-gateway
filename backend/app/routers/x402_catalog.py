@@ -171,7 +171,9 @@ def load_external_mcp_tools() -> list[dict]:
         try:
             import importlib.util
 
-            spec = importlib.util.spec_from_file_location("expanded_mcp_catalog", catalog_path)
+            spec = importlib.util.spec_from_file_location(
+                "expanded_mcp_catalog", catalog_path
+            )
             if spec is None or spec.loader is None:
                 raise ImportError("Cannot load spec for expanded_mcp_catalog")
             module = importlib.util.module_from_spec(spec)  # type: ignore[arg-type]
@@ -199,7 +201,9 @@ def load_external_mcp_tools() -> list[dict]:
             services = data.get("services", data.get("tools", data))
             if isinstance(services, list):
                 for service in services:
-                    service_name = service.get("name", service.get("service", "unknown"))
+                    service_name = service.get(
+                        "name", service.get("service", "unknown")
+                    )
                     service_tools = service.get("tools", [])
                     if isinstance(service_tools, list):
                         for t in service_tools:
@@ -209,7 +213,9 @@ def load_external_mcp_tools() -> list[dict]:
                                     {
                                         "id": tool_id,
                                         "name": t.get("description", tool_id),
-                                        "description": t.get("description", f"MCP tool: {tool_id}"),
+                                        "description": t.get(
+                                            "description", f"MCP tool: {tool_id}"
+                                        ),
                                         "price": "$0.01",
                                         "priceUsd": 0.01,
                                         "category": "mcp-external",
@@ -308,7 +314,9 @@ def discover_route_tools() -> list[dict]:
                 continue
             # Try to find docstring for description
             desc = f"Tool: {route}"
-            doc_match = re.search(rf'@router\.(?:get|post)\("/{route}"\)[\s\S]*?"""([^"]*)"""', content)
+            doc_match = re.search(
+                rf'@router\.(?:get|post)\("/{route}"\)[\s\S]*?"""([^"]*)"""', content
+            )
             if doc_match:
                 desc = doc_match.group(1).strip().split("\n")[0].strip()
             tools.append(
@@ -384,7 +392,9 @@ def get_catalog():
 
             for tool_id, pricing in DATABUS_TOOLS.items():
                 if tool_id not in all_tools:
-                    desc = pricing.get("description", f"{tool_id} — DataBus crypto intelligence")
+                    desc = pricing.get(
+                        "description", f"{tool_id} — DataBus crypto intelligence"
+                    )
                     category = pricing.get("category", "data")
                     all_tools[tool_id] = {
                         "id": tool_id,
@@ -449,8 +459,12 @@ def get_catalog():
         tid = t["id"]
         if tid in all_tools:
             # Enrich — route definitions may have more accurate descriptions
-            if not all_tools[tid].get("description") or all_tools[tid].get("description", "").startswith("Tool:"):
-                all_tools[tid]["description"] = t.get("description", all_tools[tid].get("description", ""))
+            if not all_tools[tid].get("description") or all_tools[tid].get(
+                "description", ""
+            ).startswith("Tool:"):
+                all_tools[tid]["description"] = t.get(
+                    "description", all_tools[tid].get("description", "")
+                )
         else:
             all_tools[tid] = t
             services.add("rmi-native")
@@ -464,7 +478,9 @@ def get_catalog():
             continue
         # Normalize pricing - external tools may have price_usd (snake) or priceUsd (camel)
         price_usd = t.get("price_usd", t.get("priceUsd", 0.01))
-        price_atoms = t.get("price_atoms", t.get("priceAtomic", str(int(price_usd * 1_000_000))))
+        price_atoms = t.get(
+            "price_atoms", t.get("priceAtomic", str(int(price_usd * 1_000_000)))
+        )
         trial_free = t.get("trial_free", t.get("trialFree", 1))
 
         if tid in all_tools:
@@ -525,7 +541,10 @@ def get_catalog():
                 tool["chains"] = sorted(set(variant_chains + tool.get("chains", [])))
 
     # Sanitize ALL tools before returning
-    tool_list = sorted([_sanitize_tool(dict(t)) for t in all_tools.values()], key=lambda x: x.get("priceUsd", 0))
+    tool_list = sorted(
+        [_sanitize_tool(dict(t)) for t in all_tools.values()],
+        key=lambda x: x.get("priceUsd", 0),
+    )
 
     result = {
         "chains": chains or {"base": 0, "solana": 0},
@@ -561,7 +580,9 @@ async def list_chain_tools(chain: str):
 async def list_category_tools(category: str):
     """Get tools in a specific category across all chains"""
     catalog = get_catalog()
-    filtered = [t for t in catalog["tools"] if t.get("category", "") == category.lower()]
+    filtered = [
+        t for t in catalog["tools"] if t.get("category", "") == category.lower()
+    ]
     return {"category": category, "count": len(filtered), "tools": filtered}
 
 

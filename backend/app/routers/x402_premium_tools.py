@@ -14,10 +14,9 @@ import time
 from datetime import datetime
 
 import aiohttp
+from app.domain.scoring import SIMILARITY_LABELS, load_policy, similarity_tier
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
-
-from app.domain.scoring import SIMILARITY_LABELS, load_policy, similarity_tier
 
 logger = logging.getLogger("x402.premium")
 
